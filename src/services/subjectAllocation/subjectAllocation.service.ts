@@ -317,9 +317,23 @@ class SubjectAllocationService {
     id: string
   ): Promise<SubjectAllocation> {
     try {
-      const subjectAllocation = await prisma.subjectAllocation.update({
-        where: { id: id, isDeleted: false },
-        data: { isDeleted: true },
+      const subjectAllocation = await prisma.$transaction(async (tx) => {
+        const deletedAllocation = await tx.subjectAllocation.update({
+          where: { id: id, isDeleted: false },
+          data: { isDeleted: true },
+        });
+
+        // Cascade soft delete to FeedbackForms
+        // We need to find the forms first to cascade further if needed, 
+        // but for now, let's just mark the forms as deleted. 
+        // Ideally, we should call feedbackFormService.softDeleteForm, but that might create circular dependencies.
+        // So we will just mark them deleted here.
+        await tx.feedbackForm.updateMany({
+          where: { subjectAllocationId: id, isDeleted: false },
+          data: { isDeleted: true, status: 'CLOSED' },
+        });
+
+        return deletedAllocation;
       });
       return subjectAllocation;
     } catch (error: any) {

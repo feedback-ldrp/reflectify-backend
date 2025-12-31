@@ -455,9 +455,17 @@ class OverrideStudentsService {
         throw new AppError('Override student not found.', 404);
       }
 
-      await prisma.overrideStudent.update({
-        where: { id: studentId },
-        data: { isDeleted: true },
+      await prisma.$transaction(async (tx) => {
+        await tx.overrideStudent.update({
+          where: { id: studentId },
+          data: { isDeleted: true },
+        });
+
+        // Cascade soft delete to FormAccess
+        await tx.formAccess.updateMany({
+          where: { overrideStudentId: studentId, isDeleted: false },
+          data: { isDeleted: true },
+        });
       });
     } catch (error: any) {
       console.error(
@@ -491,12 +499,38 @@ class OverrideStudentsService {
         },
       });
 
-      await prisma.overrideStudent.updateMany({
-        where: {
-          feedbackFormOverrideId: override.id,
-          isDeleted: false,
-        },
-        data: { isDeleted: true },
+      await prisma.$transaction(async (tx) => {
+        await tx.overrideStudent.updateMany({
+          where: {
+            feedbackFormOverrideId: override.id,
+            isDeleted: false,
+          },
+          data: { isDeleted: true },
+        });
+
+        // Cascade soft delete to FormAccess for all deleted override students
+        // We can't easily join in updateMany, so we might need to find them first or use a raw query.
+        // Or, since we know the overrideStudentIds belong to this override, we can find them.
+        // However, finding all IDs might be expensive if there are many.
+        // A better approach for clearOverrideStudents might be to iterate or just accept that we need to find them.
+        // Given the likely scale (dozens/hundreds), finding IDs is fine.
+
+        const deletedStudentIds = await tx.overrideStudent.findMany({
+          where: { feedbackFormOverrideId: override.id }, // They are already marked deleted in the previous step? No, wait.
+          // Transaction isolation: inside the transaction, the previous update is visible.
+          // But we want the IDs of the students we JUST deleted.
+          // Actually, we can just query by feedbackFormOverrideId because we are clearing ALL of them.
+          select: { id: true },
+        });
+
+        const ids = deletedStudentIds.map((s) => s.id);
+
+        if (ids.length > 0) {
+          await tx.formAccess.updateMany({
+            where: { overrideStudentId: { in: ids }, isDeleted: false },
+            data: { isDeleted: true },
+          });
+        }
       });
 
       return count;

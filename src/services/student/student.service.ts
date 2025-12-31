@@ -317,10 +317,21 @@ class StudentService {
     try {
       studentCache.clear();
 
-      const student = await prisma.student.update({
-        where: { id: id, isDeleted: false },
-        data: { isDeleted: true },
+      const student = await prisma.$transaction(async (tx) => {
+        const deletedStudent = await tx.student.update({
+          where: { id: id, isDeleted: false },
+          data: { isDeleted: true },
+        });
+
+        // Cascade soft delete to FormAccess
+        await tx.formAccess.updateMany({
+          where: { studentId: id, isDeleted: false },
+          data: { isDeleted: true },
+        });
+
+        return deletedStudent;
       });
+
       return student;
     } catch (error: any) {
       console.error('Error in StudentService.softDeleteStudent:', error);

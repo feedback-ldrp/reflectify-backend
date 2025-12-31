@@ -13,6 +13,7 @@ import {
   Semester,
   Department,
 } from '@prisma/client';
+import crypto from 'crypto';
 import { prisma } from '../common/prisma.service';
 import AppError from '../../utils/appError';
 import { emailService, EmailJobPayload } from '../email/email.service';
@@ -139,7 +140,7 @@ class FeedbackFormService {
 
   // Generates a random alphanumeric hash for form access.
   private generateHash(): string {
-    return Math.random().toString(36).substring(2, 15);
+    return crypto.randomBytes(8).toString('hex');
   }
 
   // Generates feedback questions based on subject allocations.
@@ -241,6 +242,22 @@ class FeedbackFormService {
         }
 
         const firstAllocation = allocations[0];
+
+        // Check if a form already exists for this allocation
+        const existingForm = await prisma.feedbackForm.findFirst({
+          where: {
+            divisionId: divisionId,
+            subjectAllocationId: firstAllocation.id,
+            isDeleted: false,
+          },
+        });
+
+        if (existingForm) {
+          console.log(
+            `Form already exists for Division ${divisionId} and Allocation ${firstAllocation.id}. Skipping.`
+          );
+          continue;
+        }
 
         try {
           const form = await prisma.feedbackForm.create({
@@ -522,6 +539,30 @@ class FeedbackFormService {
           data: {
             formDeleted: true,
           },
+        });
+
+        // Soft delete FormAccess
+        await tx.formAccess.updateMany({
+          where: { formId: id, isDeleted: false },
+          data: { isDeleted: true },
+        });
+
+        // Soft delete FeedbackFormOverride and OverrideStudents
+        const overrides = await tx.feedbackFormOverride.findMany({
+          where: { feedbackFormId: id, isDeleted: false },
+          select: { id: true },
+        });
+
+        for (const override of overrides) {
+          await tx.overrideStudent.updateMany({
+            where: { feedbackFormOverrideId: override.id, isDeleted: false },
+            data: { isDeleted: true },
+          });
+        }
+
+        await tx.feedbackFormOverride.updateMany({
+          where: { feedbackFormId: id, isDeleted: false },
+          data: { isDeleted: true },
         });
 
         return deletedForm;
@@ -975,7 +1016,7 @@ class FeedbackFormService {
         };
 
         await emailService.addEmailJobToQueue(
-          `send-form-access-to-${student.email}`,
+          `send-form-access-to-${student.email}-${formId}`,
           payload
         );
         emailsQueued++;
@@ -1068,7 +1109,7 @@ class FeedbackFormService {
         };
 
         await emailService.addEmailJobToQueue(
-          `send-form-access-to-override-${student.email}`,
+          `send-form-access-to-override-${student.email}-${formId}`,
           payload
         );
         emailsQueued++;
