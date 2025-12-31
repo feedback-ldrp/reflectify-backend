@@ -154,7 +154,6 @@ model Division {
 
     department         Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
     semester           Semester            @relation(fields: [semesterId], references: [id], onDelete: Restrict)
-    mentors            Faculty[]           @relation("DivisionMentors")
     students           Student[]
     subjectAllocations SubjectAllocation[]
     feedbackForms      FeedbackForm[]
@@ -204,12 +203,11 @@ model Faculty {
     departmentId    String      @map("department_id")
     isDeleted       Boolean     @default(false) @map("is_deleted")
 
-    department        Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-    mentoredDivisions Division[]          @relation("DivisionMentors")
-    allocations       SubjectAllocation[]
-    createdAt         DateTime            @default(now()) @map("created_at")
-    updatedAt         DateTime            @updatedAt @map("updated_at")
-    FeedbackQuestion  FeedbackQuestion[]
+    department       Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+    allocations      SubjectAllocation[]
+    createdAt        DateTime            @default(now()) @map("created_at")
+    updatedAt        DateTime            @updatedAt @map("updated_at")
+    FeedbackQuestion FeedbackQuestion[]
 
     @@index([departmentId])
     @@map("faculties")
@@ -241,6 +239,7 @@ model Student {
     createdAt        DateTime           @default(now()) @map("created_at")
     updatedAt        DateTime           @updatedAt @map("updated_at")
     formAccess       FormAccess[]
+    overrideStudents OverrideStudent[]
 
     @@index([departmentId, semesterId, divisionId, academicYearId])
     @@index([divisionId])
@@ -260,14 +259,17 @@ model OverrideStudent {
     phoneNumber            String?
     department             String?
     semester               String?
+    studentId              String? @map("student_id")
     isDeleted              Boolean @default(false) @map("is_deleted")
 
     feedbackFormOverride FeedbackFormOverride @relation(fields: [feedbackFormOverrideId], references: [id])
+    student              Student?             @relation(fields: [studentId], references: [id])
     responses            StudentResponse[]
     formAccess           FormAccess[]
 
     @@unique([email, feedbackFormOverrideId])
     @@index([feedbackFormOverrideId])
+    @@index([studentId])
     @@map("override_students")
 }
 

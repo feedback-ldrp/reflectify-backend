@@ -11,8 +11,8 @@ const connection = new IORedis(config.redisUrl || '', {
 });
 
 // Create a new Queue instance for handling emails.
-// We're naming it 'email-queue' to identify it in Redis.
-const emailQueue = new Queue('email-queue', {
+// We're naming it 'email-queue-v2' to avoid conflicts with any stuck processes on the old queue.
+const emailQueue = new Queue('email-queue-v2', {
   connection,
   defaultJobOptions: {
     attempts: 5, // Attempt to send an email 5 times before failing.

@@ -1,8 +1,16 @@
 // src/services/email/worker.ts
 
 import { Worker } from 'bullmq';
-import { connection } from './queue';
+import IORedis from 'ioredis';
+import config from '../../config';
 import { emailService } from './email.service';
+import { emailQueue } from './queue';
+
+// Create a dedicated Redis connection for the worker.
+// Workers require a blocking connection, so it cannot be shared with the Queue.
+const connection = new IORedis(config.redisUrl, {
+  maxRetriesPerRequest: null,
+});
 
 // The interface for the data our email jobs will contain.
 interface EmailJobData {
@@ -15,7 +23,7 @@ interface EmailJobData {
 // The first argument is the queue name, which MUST match the queue we created earlier.
 // The second argument is the "processor" function that runs for each job.
 const emailWorker = new Worker<EmailJobData>(
-  'email-queue',
+  'email-queue-v2',
   async (job) => {
     console.log(`Processing job ${job.id} for: ${job.data.to}`);
     // Call our email service to do the actual sending.
@@ -25,12 +33,12 @@ const emailWorker = new Worker<EmailJobData>(
     connection,
     // We can control how many jobs are processed at once.
     // Setting concurrency to 1 ensures emails are sent one-by-one.
-    concurrency: 1,
-    limiter: {
-      // Do not process more than 1 job every 4 seconds to be extra safe with rate limits.
-      max: 1,
-      duration: 4000,
-    },
+    concurrency: 2,
+    // Removed BullMQ limiter to rely on Nodemailer's internal pooling and rate limiting.
+    // limiter: {
+    //   max: 1,
+    //   duration: 1000,
+    // },
   }
 );
 

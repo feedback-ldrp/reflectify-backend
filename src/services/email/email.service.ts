@@ -22,6 +22,7 @@ class EmailService {
 
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
+      pool: true, // Enable pooling for better performance
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -44,7 +45,7 @@ class EmailService {
    */
   public async sendTransactionalEmail(payload: EmailJobPayload): Promise<void> {
     const mailOptions = {
-      from: `<${process.env.SMTP_FROM_NAME}> <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      from: `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to: payload.to,
       subject: payload.subject,
       html: payload.html,
@@ -69,8 +70,14 @@ class EmailService {
     payload: EmailJobPayload
   ): Promise<void> {
     try {
-      await emailQueue.add(jobName, payload);
-      console.log(`Email job "${jobName}" added to queue for ${payload.to}`);
+      // Use a static job name for the queue, but keep the descriptive name in the job ID or data if needed.
+      // For now, let's just use 'send-email' as the job name to ensure consistency.
+      // Append a timestamp to the Job ID to ensure uniqueness and prevent deduplication issues during testing.
+      const uniqueJobId = `${jobName}-${Date.now()}`;
+      const job = await emailQueue.add('send-email', payload, {
+        jobId: uniqueJobId,
+      });
+      console.log(`Email job added. ID: ${job.id} | For: ${payload.to}`);
     } catch (error) {
       console.warn(
         `Failed to add email to queue, sending directly:`,

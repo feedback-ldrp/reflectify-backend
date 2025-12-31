@@ -4,8 +4,9 @@
  * Handles student data upload, retrieval, and management for specific feedback forms.
  */
 
-import { OverrideStudent, FeedbackFormOverride } from '@prisma/client';
+import { OverrideStudent, FeedbackFormOverride, Student } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import crypto from 'crypto';
 import { prisma } from '../common/prisma.service';
 import AppError from '../../utils/appError';
 import { overrideStudentExcelRowSchema } from '../../utils/validators/overrideStudents.validation';
@@ -93,6 +94,7 @@ class OverrideStudentsService {
   }
 
   // Processes an Excel/CSV file containing override student data.
+  // UPDATED: Now attempts to sync with the main Student table first.
   public async uploadOverrideStudents(
     formId: string,
     fileBuffer: Buffer,
@@ -103,13 +105,34 @@ class OverrideStudentsService {
     let skippedCount = 0;
 
     try {
-      await this.validateFeedbackForm(formId);
+      // 1. Get Form Context (Division, Semester, Department, AcademicYear)
+      const form = await prisma.feedbackForm.findUnique({
+        where: { id: formId, isDeleted: false },
+        include: {
+          division: {
+            include: {
+              semester: true,
+              department: true,
+            },
+          },
+        },
+      });
 
+      if (!form) {
+        throw new AppError('Feedback form not found or is deleted.', 404);
+      }
+
+      const { division } = form;
+      const { semester, department } = division;
+      const academicYearId = semester.academicYearId;
+
+      // 2. Ensure FeedbackFormOverride exists (we still use this for tracking the upload event)
       const override = await this.ensureFeedbackFormOverride(
         formId,
         uploadedBy
       );
 
+      // 3. Soft delete existing OverrideStudents for this form (cleanup previous uploads)
       await prisma.overrideStudent.updateMany({
         where: { feedbackFormOverrideId: override.id },
         data: { isDeleted: true },
@@ -166,69 +189,187 @@ class OverrideStudentsService {
           enrollmentNumber,
           batch,
           phoneNumber,
-          department,
-          semester,
         } = validatedData;
 
-        try {
-          if (emailSet.has(email)) {
-            const message = `Row ${rowNumber}: Skipping duplicate email '${email}' within the same upload.`;
-            console.warn(message);
-            skippedRowsDetails.push(message);
-            skippedCount++;
-            continue;
-          }
+        if (emailSet.has(email)) {
+          const message = `Row ${rowNumber}: Skipping duplicate email '${email}' within the same upload.`;
+          console.warn(message);
+          skippedRowsDetails.push(message);
+          skippedCount++;
+          continue;
+        }
+        emailSet.add(email);
 
-          const existingOverrideStudent =
-            await prisma.overrideStudent.findUnique({
+        try {
+          // STRATEGY: Try to Upsert into Main Student Table
+          // If enrollmentNumber is present, we can link to the main table.
+          if (enrollmentNumber) {
+            // Upsert Student
+            const student = await prisma.student.upsert({
+              where: { enrollmentNumber: enrollmentNumber },
+              create: {
+                name: studentName,
+                enrollmentNumber: enrollmentNumber,
+                email: email,
+                phoneNumber: phoneNumber || '',
+                batch: batch || '',
+                // Use Form's Context for these FKs
+                departmentId: department.id,
+                semesterId: semester.id,
+                divisionId: division.id,
+                academicYearId: academicYearId,
+              },
+              update: {
+                name: studentName,
+                email: email,
+                phoneNumber: phoneNumber || '',
+                batch: batch || '',
+                // Update location to current form's context (Implicit Promotion)
+                departmentId: department.id,
+                semesterId: semester.id,
+                divisionId: division.id,
+                academicYearId: academicYearId,
+                isDeleted: false,
+              },
+            });
+
+            // Create FormAccess
+            // Check if exists first to avoid unique constraint error if re-uploading
+            const existingAccess = await prisma.formAccess.findUnique({
               where: {
-                email_feedbackFormOverrideId: {
-                  email: email,
-                  feedbackFormOverrideId: override.id,
+                form_student_unique: {
+                  formId: formId,
+                  studentId: student.id,
                 },
               },
             });
 
-          if (existingOverrideStudent && !existingOverrideStudent.isDeleted) {
-            const message = `Row ${rowNumber}: Student with email '${email}' already exists for this form override.`;
-            console.warn(message);
-            skippedRowsDetails.push(message);
-            skippedCount++;
-            continue;
-          }
+            if (!existingAccess) {
+              await prisma.formAccess.create({
+                data: {
+                  formId: formId,
+                  studentId: student.id,
+                  accessToken: crypto.randomBytes(8).toString('hex'),
+                },
+              });
+            } else if (existingAccess.isDeleted) {
+               await prisma.formAccess.update({
+                 where: { id: existingAccess.id },
+                 data: { isDeleted: false }
+               });
+            }
 
-          emailSet.add(email);
+            // Also create OverrideStudent record for history/tracking, linked to Student
+            const existingOverrideStudent =
+              await prisma.overrideStudent.findUnique({
+                where: {
+                  email_feedbackFormOverrideId: {
+                    email: email,
+                    feedbackFormOverrideId: override.id,
+                  },
+                },
+              });
 
-          if (existingOverrideStudent && existingOverrideStudent.isDeleted) {
-            await prisma.overrideStudent.update({
-              where: { id: existingOverrideStudent.id },
-              data: {
-                name: studentName,
-                enrollmentNumber: enrollmentNumber,
-                batch: batch,
-                phoneNumber: phoneNumber,
-                department: department,
-                semester: semester,
-                isDeleted: false,
-              },
-            });
+            if (existingOverrideStudent) {
+               await prisma.overrideStudent.update({
+                 where: { id: existingOverrideStudent.id },
+                 data: { 
+                   isDeleted: false,
+                   studentId: student.id // Ensure link
+                 }
+               });
+            } else {
+              await prisma.overrideStudent.create({
+                data: {
+                  feedbackFormOverrideId: override.id,
+                  name: studentName,
+                  email: email,
+                  enrollmentNumber: enrollmentNumber,
+                  batch: batch,
+                  phoneNumber: phoneNumber,
+                  department: validatedData.department,
+                  semester: validatedData.semester,
+                  isDeleted: false,
+                  studentId: student.id, // Link to Master Student
+                },
+              });
+            }
+
             addedRows++;
           } else {
-            await prisma.overrideStudent.create({
-              data: {
-                feedbackFormOverrideId: override.id,
-                name: studentName,
-                email: email,
-                enrollmentNumber: enrollmentNumber,
-                batch: batch,
-                phoneNumber: phoneNumber,
-                department: department,
-                semester: semester,
-                isDeleted: false,
-              },
+            // Fallback: Create OverrideStudent (Guest/No Enrollment)
+            // This preserves the old behavior for edge cases
+            const existingOverrideStudent =
+              await prisma.overrideStudent.findUnique({
+                where: {
+                  email_feedbackFormOverrideId: {
+                    email: email,
+                    feedbackFormOverrideId: override.id,
+                  },
+                },
+              });
+
+            if (existingOverrideStudent) {
+               await prisma.overrideStudent.update({
+                 where: { id: existingOverrideStudent.id },
+                 data: { isDeleted: false }
+               });
+            } else {
+              await prisma.overrideStudent.create({
+                data: {
+                  feedbackFormOverrideId: override.id,
+                  name: studentName,
+                  email: email,
+                  enrollmentNumber: enrollmentNumber, // might be null/empty
+                  batch: batch,
+                  phoneNumber: phoneNumber,
+                  department: validatedData.department, // Use raw string from excel
+                  semester: validatedData.semester,     // Use raw string from excel
+                  isDeleted: false,
+                },
+              });
+            }
+            
+            // Create FormAccess for Guest (OverrideStudent)
+            // We need to find the ID of the override student we just created/updated
+            const currentOverrideStudent = await prisma.overrideStudent.findUnique({
+                where: {
+                  email_feedbackFormOverrideId: {
+                    email: email,
+                    feedbackFormOverrideId: override.id,
+                  },
+                },
             });
+
+            if (currentOverrideStudent) {
+                const existingAccess = await prisma.formAccess.findUnique({
+                  where: {
+                    form_override_student_unique: {
+                      formId: formId,
+                      overrideStudentId: currentOverrideStudent.id,
+                    },
+                  },
+                });
+
+                if (!existingAccess) {
+                  await prisma.formAccess.create({
+                    data: {
+                      formId: formId,
+                      overrideStudentId: currentOverrideStudent.id,
+                      accessToken: crypto.randomBytes(8).toString('hex'),
+                    },
+                  });
+                } else if (existingAccess.isDeleted) {
+                   await prisma.formAccess.update({
+                     where: { id: existingAccess.id },
+                     data: { isDeleted: false }
+                   });
+                }
+            }
+
             addedRows++;
           }
+
         } catch (innerError: any) {
           const message = `Row ${rowNumber}: Error processing data for Email '${email}': ${innerError.message || 'Unknown error'}.`;
           console.error(message, innerError);
@@ -238,7 +379,7 @@ class OverrideStudentsService {
       }
 
       return {
-        message: 'Override students data processing complete.',
+        message: 'Student data processing complete (Synced with Master List).',
         rowsAffected: addedRows,
         skippedRows: skippedCount,
         skippedDetails: skippedRowsDetails,

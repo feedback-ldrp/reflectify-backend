@@ -32,7 +32,6 @@ class FacultyService {
         },
         include: {
           department: true,
-          mentoredDivisions: { where: { isDeleted: false } },
           allocations: { where: { isDeleted: false } },
         },
       });
