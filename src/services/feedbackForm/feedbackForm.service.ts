@@ -12,6 +12,7 @@ import {
   Prisma,
   Semester,
   Department,
+  SubjectType,
 } from '@prisma/client';
 import crypto from 'crypto';
 import { prisma } from '../common/prisma.service';
@@ -147,7 +148,7 @@ class FeedbackFormService {
   private generateQuestionsForAllSubjects(
     allocations: (SubjectAllocation & {
       faculty: { id: string; name: string };
-      subject: { id: string; name: string };
+      subject: { id: string; name: string; type: SubjectType };
     })[]
   ): Prisma.FeedbackQuestionCreateManyFormInput[] {
     let questions: Prisma.FeedbackQuestionCreateManyFormInput[] = [];
@@ -161,16 +162,21 @@ class FeedbackFormService {
           ? 'lecture-feedback'
           : 'lab-feedback';
       const batchValue =
-        allocation.lectureType === 'LECTURE' ? 'None' : allocation.batch;
+        allocation.batch && allocation.batch !== '-'
+          ? allocation.batch
+          : 'None';
+
+      // Ensure questions for elective subjects are optional
+      const isRequired = allocation.subject.type !== SubjectType.ELECTIVE;
 
       questions.push({
         categoryId,
         facultyId: allocation.faculty.id,
         subjectId: allocation.subject.id,
         batch: batchValue,
-        text: `Rate Prof. ${allocation.faculty.name} in Subject: ${allocation.subject.name} (${sessionType}) - ${batchValue}`,
+        text: `Rate ${allocation.faculty.name} in Subject: ${allocation.subject.name} (${sessionType}) - ${batchValue}`,
         type: 'rating',
-        isRequired: true,
+        isRequired,
         displayOrder: displayOrder++,
         isDeleted: false,
       });
