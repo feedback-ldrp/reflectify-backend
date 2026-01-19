@@ -48,7 +48,6 @@ class DivisionService {
           students: {
             where: { isDeleted: false },
           },
-          mentors: { where: { isDeleted: false } },
           subjectAllocations: { where: { isDeleted: false } },
           feedbackForms: { where: { isDeleted: false } },
         },
