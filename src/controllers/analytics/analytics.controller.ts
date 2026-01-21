@@ -349,3 +349,120 @@ export const getCompleteAnalyticsData = asyncHandler(
     });
   }
 );
+
+// ==================== OPTIMIZED ANALYTICS ENDPOINT ====================
+
+export const getOptimizedAnalyticsData = asyncHandler(
+  // Retrieves pre-aggregated analytics data (no raw snapshots, all processing done server-side).
+  async (req: Request, res: Response) => {
+    const {
+      academicYearId,
+      departmentId,
+      subjectId,
+      semesterId,
+      divisionId,
+      lectureType,
+      includeDeleted,
+    } = req.query;
+
+    const result = await analyticsService.getOptimizedAnalyticsData(
+      academicYearId as string | undefined,
+      departmentId as string | undefined,
+      subjectId as string | undefined,
+      semesterId as string | undefined,
+      divisionId as string | undefined,
+      lectureType as 'LECTURE' | 'LAB' | undefined,
+      includeDeleted === 'true'
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: result,
+    });
+  }
+);
+
+// ==================== DETAILED DRILL-DOWN ENDPOINTS ====================
+
+export const getSubjectDetailedAnalytics = asyncHandler(
+  // Retrieves detailed analytics for a specific subject.
+  async (req: Request, res: Response) => {
+    try {
+      const { subjectId } = req.params;
+      const { academicYearId, semesterId, departmentId } = req.query;
+
+      if (!subjectId) {
+        throw new AppError('Subject ID is required.', 400);
+      }
+
+      const result = await analyticsService.getSubjectDetailedAnalytics(
+        subjectId,
+        academicYearId as string | undefined,
+        semesterId as string | undefined,
+        departmentId as string | undefined
+      );
+
+      res.status(200).json({
+        status: 'success',
+        data: result,
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to retrieve subject detailed analytics.', 500);
+    }
+  }
+);
+
+export const getFacultyDetailedAnalytics = asyncHandler(
+  // Retrieves detailed analytics for a specific faculty member.
+  async (req: Request, res: Response) => {
+    try {
+      const { facultyId } = req.params;
+      const { academicYearId } = req.query;
+
+      if (!facultyId) {
+        throw new AppError('Faculty ID is required.', 400);
+      }
+
+      const result = await analyticsService.getFacultyDetailedAnalytics(
+        facultyId,
+        academicYearId as string | undefined
+      );
+
+      res.status(200).json({
+        status: 'success',
+        data: result,
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to retrieve faculty detailed analytics.', 500);
+    }
+  }
+);
+
+export const getDivisionDetailedAnalytics = asyncHandler(
+  // Retrieves detailed analytics for a specific division.
+  async (req: Request, res: Response) => {
+    try {
+      const { divisionId } = req.params;
+      const { academicYearId } = req.query;
+
+      if (!divisionId) {
+        throw new AppError('Division ID is required.', 400);
+      }
+
+      const result = await analyticsService.getDivisionDetailedAnalytics(
+        divisionId,
+        academicYearId as string | undefined
+      );
+
+      res.status(200).json({
+        status: 'success',
+        data: result,
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to retrieve division detailed analytics.', 500);
+    }
+  }
+);

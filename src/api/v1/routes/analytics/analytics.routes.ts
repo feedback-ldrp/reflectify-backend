@@ -21,6 +21,10 @@ import {
   getSemesterDivisions,
   getFilterDictionary,
   getCompleteAnalyticsData,
+  getOptimizedAnalyticsData,
+  getSubjectDetailedAnalytics,
+  getFacultyDetailedAnalytics,
+  getDivisionDetailedAnalytics,
 } from '../../../../controllers/analytics/analytics.controller';
 import {
   isAuthenticated,
@@ -180,6 +184,48 @@ router.get(
     Designation.AsstProf
   ),
   getCompleteAnalyticsData
+);
+
+// NEW: Route for optimized analytics data (pre-aggregated, no raw snapshots)
+router.get(
+  '/optimized-data',
+  authorizeRoles(
+    Designation.SUPER_ADMIN,
+    Designation.HOD,
+    Designation.AsstProf
+  ),
+  getOptimizedAnalyticsData
+);
+
+// NEW: Detailed drill-down routes
+router.get(
+  '/subjects/:subjectId/detailed',
+  authorizeRoles(
+    Designation.SUPER_ADMIN,
+    Designation.HOD,
+    Designation.AsstProf
+  ),
+  getSubjectDetailedAnalytics
+);
+
+router.get(
+  '/faculty/:facultyId/detailed',
+  authorizeRoles(
+    Designation.SUPER_ADMIN,
+    Designation.HOD,
+    Designation.AsstProf
+  ),
+  getFacultyDetailedAnalytics
+);
+
+router.get(
+  '/divisions/:divisionId/detailed',
+  authorizeRoles(
+    Designation.SUPER_ADMIN,
+    Designation.HOD,
+    Designation.AsstProf
+  ),
+  getDivisionDetailedAnalytics
 );
 
 export default router;

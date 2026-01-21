@@ -7,6 +7,20 @@
 import { Prisma, LectureType } from '@prisma/client';
 import { prisma } from '../common/prisma.service';
 import AppError from '../../utils/appError';
+import {
+  OptimizedAnalyticsResponse,
+  SubjectDetailedAnalytics,
+  FacultyDetailedAnalytics,
+  DivisionDetailedAnalytics,
+  AcademicYearDetailedAnalytics,
+  SubjectRatingAggregated,
+  FacultyPerformanceAggregated,
+  DivisionPerformanceAggregated,
+  AcademicYearTrendAggregated,
+  SemesterTrendAggregated,
+  DepartmentTrendAggregated,
+  OverallStats,
+} from './analytics.interfaces';
 
 interface OverallSemesterRatingOutput {
   semesterId: string;
@@ -2065,6 +2079,1278 @@ class AnalyticsService {
         error
       );
       throw new AppError('Failed to retrieve complete analytics data.', 500);
+    }
+  }
+
+  // ==================== OPTIMIZED ANALYTICS ENDPOINT ====================
+  // Returns pre-aggregated data instead of raw snapshots
+
+  public async getOptimizedAnalyticsData(
+    academicYearId?: string,
+    departmentId?: string,
+    subjectId?: string,
+    semesterId?: string,
+    divisionId?: string,
+    lectureType?: 'LECTURE' | 'LAB',
+    includeDeleted: boolean = false
+  ): Promise<OptimizedAnalyticsResponse> {
+    try {
+      // Build the filter conditions
+      const whereConditions: Prisma.Sql[] = [];
+
+      if (!includeDeleted) {
+        whereConditions.push(Prisma.sql`sr.is_deleted = false`);
+        whereConditions.push(Prisma.sql`ff.is_deleted = false`);
+        whereConditions.push(Prisma.sql`sa.is_deleted = false`);
+        whereConditions.push(Prisma.sql`sem.is_deleted = false`);
+        whereConditions.push(Prisma.sql`div.is_deleted = false`);
+        whereConditions.push(Prisma.sql`sub.is_deleted = false`);
+        whereConditions.push(Prisma.sql`fac.is_deleted = false`);
+        whereConditions.push(Prisma.sql`dept.is_deleted = false`);
+        whereConditions.push(Prisma.sql`ay.is_deleted = false`);
+        whereConditions.push(Prisma.sql`st.is_deleted = false`);
+      }
+
+      if (academicYearId) {
+        whereConditions.push(Prisma.sql`ay.id = ${academicYearId}`);
+      }
+      if (departmentId) {
+        whereConditions.push(Prisma.sql`dept.id = ${departmentId}`);
+      }
+      if (subjectId) {
+        whereConditions.push(Prisma.sql`sub.id = ${subjectId}`);
+      }
+      if (semesterId) {
+        whereConditions.push(Prisma.sql`sem.id = ${semesterId}`);
+      }
+      if (divisionId) {
+        whereConditions.push(Prisma.sql`div.id = ${divisionId}`);
+      }
+      if (lectureType) {
+        whereConditions.push(Prisma.sql`sa."lectureType" = ${lectureType}::"LectureType"`);
+      }
+
+      const whereClause = whereConditions.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(whereConditions, ' AND ')}`
+        : Prisma.empty;
+
+      // Fetch aggregated data using a single optimized query
+      const feedbackSnapshots = await prisma.$queryRaw<Array<{
+        id: string;
+        academicYearId: string;
+        academicYearString: string;
+        departmentId: string;
+        departmentName: string;
+        departmentAbbreviation: string;
+        semesterId: string;
+        semesterNumber: number;
+        divisionId: string;
+        divisionName: string;
+        subjectId: string;
+        subjectName: string;
+        subjectAbbreviation: string;
+        subjectCode: string;
+        facultyId: string;
+        facultyName: string;
+        facultyAbbreviation: string;
+        facultyDesignation: string;
+        studentId: string | null;
+        studentEnrollmentNumber: string;
+        formId: string;
+        responseValue: any;
+        batch: string;
+        lectureType: LectureType;
+      }>>`
+        SELECT
+          sr.id,
+          ay.id AS "academicYearId",
+          ay.year_string AS "academicYearString",
+          dept.id AS "departmentId",
+          dept.name AS "departmentName",
+          dept.abbreviation AS "departmentAbbreviation",
+          sem.id AS "semesterId",
+          sem.semester_number AS "semesterNumber",
+          div.id AS "divisionId",
+          div.division_name AS "divisionName",
+          sub.id AS "subjectId",
+          sub.name AS "subjectName",
+          COALESCE(sub.abbreviation, '') AS "subjectAbbreviation",
+          COALESCE(sub.subject_code, '') AS "subjectCode",
+          fac.id AS "facultyId",
+          fac.name AS "facultyName",
+          COALESCE(fac.abbreviation, '') AS "facultyAbbreviation",
+          fac.designation AS "facultyDesignation",
+          st.id AS "studentId",
+          st.enrollment_number AS "studentEnrollmentNumber",
+          ff.id AS "formId",
+          sr.response_value AS "responseValue",
+          st.batch,
+          sa."lectureType" AS "lectureType"
+        FROM student_responses sr
+        INNER JOIN feedback_forms ff ON sr.feedback_form_id = ff.id
+        INNER JOIN subject_allocations sa ON ff.subject_allocation_id = sa.id
+        INNER JOIN semesters sem ON sa.semester_id = sem.id
+        INNER JOIN divisions div ON ff.division_id = div.id
+        INNER JOIN departments dept ON sem.department_id = dept.id
+        INNER JOIN academic_years ay ON sem.academic_year_id = ay.id
+        INNER JOIN subjects sub ON sa.subject_id = sub.id
+        INNER JOIN faculties fac ON sa.faculty_id = fac.id
+        INNER JOIN students st ON sr.student_id = st.id
+        ${whereClause}
+      `;
+
+      // Process the data into aggregated formats
+      const overallStats = this.calculateOverallStats(feedbackSnapshots);
+      const subjectRatings = this.aggregateSubjectRatings(feedbackSnapshots);
+      const facultyPerformance = this.aggregateFacultyPerformance(feedbackSnapshots);
+      const divisionPerformance = this.aggregateDivisionPerformance(feedbackSnapshots);
+      const academicYearTrends = this.aggregateAcademicYearTrends(feedbackSnapshots);
+      const semesterTrends = this.aggregateSemesterTrends(feedbackSnapshots);
+      const departmentTrends = this.aggregateDepartmentTrends(feedbackSnapshots);
+
+      return {
+        overallStats,
+        subjectRatings,
+        facultyPerformance,
+        divisionPerformance,
+        academicYearTrends,
+        semesterTrends,
+        departmentTrends,
+        filters: {
+          academicYearId,
+          departmentId,
+          semesterId,
+          divisionId,
+          subjectId,
+          lectureType,
+        },
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      console.error('Error in AnalyticsService.getOptimizedAnalyticsData:', error);
+      throw new AppError('Failed to retrieve optimized analytics data.', 500);
+    }
+  }
+
+  // ==================== AGGREGATION HELPER METHODS ====================
+
+  private calculateOverallStats(snapshots: any[]): OverallStats {
+    const scores = snapshots
+      .map(s => this.parseResponseValueToScore(s.responseValue))
+      .filter((score): score is number => score !== null && score > 0);
+
+    const uniqueSubjects = new Set(snapshots.map(s => s.subjectId));
+    const uniqueFaculties = new Set(snapshots.map(s => s.facultyId));
+    const uniqueStudents = new Set(snapshots.map(s => s.studentId).filter(Boolean));
+    const uniqueDivisions = new Set(snapshots.map(s => s.divisionId));
+
+    return {
+      totalResponses: scores.length,
+      averageRating: scores.length > 0
+        ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
+        : 0,
+      uniqueSubjects: uniqueSubjects.size,
+      uniqueFaculties: uniqueFaculties.size,
+      uniqueStudents: uniqueStudents.size,
+      uniqueDivisions: uniqueDivisions.size,
+    };
+  }
+
+  private aggregateSubjectRatings(snapshots: any[]): SubjectRatingAggregated[] {
+    const subjectMap = new Map<string, {
+      subjectId: string;
+      subjectName: string;
+      subjectAbbreviation: string;
+      subjectCode: string;
+      lectureScores: number[];
+      labScores: number[];
+      faculties: Set<string>;
+      divisions: Set<string>;
+    }>();
+
+    snapshots.forEach(snapshot => {
+      const score = this.parseResponseValueToScore(snapshot.responseValue);
+      if (score === null || score <= 0) return;
+
+      if (!subjectMap.has(snapshot.subjectId)) {
+        subjectMap.set(snapshot.subjectId, {
+          subjectId: snapshot.subjectId,
+          subjectName: snapshot.subjectName,
+          subjectAbbreviation: snapshot.subjectAbbreviation,
+          subjectCode: snapshot.subjectCode,
+          lectureScores: [],
+          labScores: [],
+          faculties: new Set(),
+          divisions: new Set(),
+        });
+      }
+
+      const subject = subjectMap.get(snapshot.subjectId)!;
+      if (snapshot.lectureType === 'LECTURE') {
+        subject.lectureScores.push(score);
+      } else {
+        subject.labScores.push(score);
+      }
+      subject.faculties.add(snapshot.facultyId);
+      subject.divisions.add(snapshot.divisionId);
+    });
+
+    return Array.from(subjectMap.values())
+      .map(subject => {
+        const allScores = [...subject.lectureScores, ...subject.labScores];
+        return {
+          subjectId: subject.subjectId,
+          subjectName: subject.subjectName,
+          subjectAbbreviation: subject.subjectAbbreviation,
+          subjectCode: subject.subjectCode,
+          lectureRating: subject.lectureScores.length > 0
+            ? Number((subject.lectureScores.reduce((a, b) => a + b, 0) / subject.lectureScores.length).toFixed(2))
+            : null,
+          labRating: subject.labScores.length > 0
+            ? Number((subject.labScores.reduce((a, b) => a + b, 0) / subject.labScores.length).toFixed(2))
+            : null,
+          overallRating: allScores.length > 0
+            ? Number((allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2))
+            : 0,
+          lectureResponses: subject.lectureScores.length,
+          labResponses: subject.labScores.length,
+          totalResponses: allScores.length,
+          facultyCount: subject.faculties.size,
+          divisionCount: subject.divisions.size,
+        };
+      })
+      .sort((a, b) => b.overallRating - a.overallRating);
+  }
+
+  private aggregateFacultyPerformance(snapshots: any[]): FacultyPerformanceAggregated[] {
+    const facultyMap = new Map<string, {
+      facultyId: string;
+      facultyName: string;
+      facultyAbbreviation: string;
+      designation: string;
+      scores: number[];
+      subjects: Set<string>;
+      divisions: Set<string>;
+    }>();
+
+    snapshots.forEach(snapshot => {
+      const score = this.parseResponseValueToScore(snapshot.responseValue);
+      if (score === null || score <= 0) return;
+
+      if (!facultyMap.has(snapshot.facultyId)) {
+        facultyMap.set(snapshot.facultyId, {
+          facultyId: snapshot.facultyId,
+          facultyName: snapshot.facultyName,
+          facultyAbbreviation: snapshot.facultyAbbreviation,
+          designation: snapshot.facultyDesignation || 'N/A',
+          scores: [],
+          subjects: new Set(),
+          divisions: new Set(),
+        });
+      }
+
+      const faculty = facultyMap.get(snapshot.facultyId)!;
+      faculty.scores.push(score);
+      faculty.subjects.add(snapshot.subjectId);
+      faculty.divisions.add(snapshot.divisionId);
+    });
+
+    const facultyList = Array.from(facultyMap.values())
+      .map(faculty => ({
+        facultyId: faculty.facultyId,
+        facultyName: faculty.facultyName,
+        facultyAbbreviation: faculty.facultyAbbreviation,
+        designation: faculty.designation,
+        averageRating: faculty.scores.length > 0
+          ? Number((faculty.scores.reduce((a, b) => a + b, 0) / faculty.scores.length).toFixed(2))
+          : 0,
+        totalResponses: faculty.scores.length,
+        subjectCount: faculty.subjects.size,
+        divisionCount: faculty.divisions.size,
+        rank: 0, // Will be set after sorting
+      }))
+      .sort((a, b) => b.averageRating - a.averageRating);
+
+    // Assign ranks
+    facultyList.forEach((faculty, index) => {
+      faculty.rank = index + 1;
+    });
+
+    return facultyList;
+  }
+
+  private aggregateDivisionPerformance(snapshots: any[]): DivisionPerformanceAggregated[] {
+    const divisionMap = new Map<string, {
+      divisionId: string;
+      divisionName: string;
+      departmentName: string;
+      semesterNumber: number;
+      scores: number[];
+      faculties: Set<string>;
+      subjects: Set<string>;
+    }>();
+
+    snapshots.forEach(snapshot => {
+      const score = this.parseResponseValueToScore(snapshot.responseValue);
+      if (score === null || score <= 0) return;
+
+      if (!divisionMap.has(snapshot.divisionId)) {
+        divisionMap.set(snapshot.divisionId, {
+          divisionId: snapshot.divisionId,
+          divisionName: snapshot.divisionName,
+          departmentName: snapshot.departmentName,
+          semesterNumber: snapshot.semesterNumber,
+          scores: [],
+          faculties: new Set(),
+          subjects: new Set(),
+        });
+      }
+
+      const division = divisionMap.get(snapshot.divisionId)!;
+      division.scores.push(score);
+      division.faculties.add(snapshot.facultyId);
+      division.subjects.add(snapshot.subjectId);
+    });
+
+    return Array.from(divisionMap.values())
+      .map(division => ({
+        divisionId: division.divisionId,
+        divisionName: division.divisionName,
+        departmentName: division.departmentName,
+        semesterNumber: division.semesterNumber,
+        averageRating: division.scores.length > 0
+          ? Number((division.scores.reduce((a, b) => a + b, 0) / division.scores.length).toFixed(2))
+          : 0,
+        totalResponses: division.scores.length,
+        facultyCount: division.faculties.size,
+        subjectCount: division.subjects.size,
+      }))
+      .sort((a, b) => a.divisionName.localeCompare(b.divisionName));
+  }
+
+  private aggregateAcademicYearTrends(snapshots: any[]): AcademicYearTrendAggregated[] {
+    const yearMap = new Map<string, {
+      academicYearId: string;
+      academicYearString: string;
+      scores: number[];
+      departments: Set<string>;
+      divisions: Set<string>;
+    }>();
+
+    snapshots.forEach(snapshot => {
+      const score = this.parseResponseValueToScore(snapshot.responseValue);
+      if (score === null || score <= 0) return;
+
+      if (!yearMap.has(snapshot.academicYearId)) {
+        yearMap.set(snapshot.academicYearId, {
+          academicYearId: snapshot.academicYearId,
+          academicYearString: snapshot.academicYearString,
+          scores: [],
+          departments: new Set(),
+          divisions: new Set(),
+        });
+      }
+
+      const year = yearMap.get(snapshot.academicYearId)!;
+      year.scores.push(score);
+      year.departments.add(snapshot.departmentId);
+      year.divisions.add(snapshot.divisionId);
+    });
+
+    return Array.from(yearMap.values())
+      .map(year => ({
+        academicYearId: year.academicYearId,
+        academicYearString: year.academicYearString,
+        averageRating: year.scores.length > 0
+          ? Number((year.scores.reduce((a, b) => a + b, 0) / year.scores.length).toFixed(2))
+          : 0,
+        totalResponses: year.scores.length,
+        departmentCount: year.departments.size,
+        divisionCount: year.divisions.size,
+      }))
+      .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
+  }
+
+  private aggregateSemesterTrends(snapshots: any[]): SemesterTrendAggregated[] {
+    const semesterMap = new Map<number, Map<string, {
+      academicYearId: string;
+      academicYearString: string;
+      scores: number[];
+    }>>();
+
+    snapshots.forEach(snapshot => {
+      const score = this.parseResponseValueToScore(snapshot.responseValue);
+      if (score === null || score <= 0) return;
+
+      if (!semesterMap.has(snapshot.semesterNumber)) {
+        semesterMap.set(snapshot.semesterNumber, new Map());
+      }
+
+      const yearMap = semesterMap.get(snapshot.semesterNumber)!;
+      if (!yearMap.has(snapshot.academicYearId)) {
+        yearMap.set(snapshot.academicYearId, {
+          academicYearId: snapshot.academicYearId,
+          academicYearString: snapshot.academicYearString,
+          scores: [],
+        });
+      }
+
+      yearMap.get(snapshot.academicYearId)!.scores.push(score);
+    });
+
+    return Array.from(semesterMap.entries())
+      .map(([semesterNumber, yearMap]) => ({
+        semesterNumber,
+        academicYearData: Array.from(yearMap.values())
+          .map(year => ({
+            academicYearId: year.academicYearId,
+            academicYearString: year.academicYearString,
+            averageRating: year.scores.length > 0
+              ? Number((year.scores.reduce((a, b) => a + b, 0) / year.scores.length).toFixed(2))
+              : 0,
+            responseCount: year.scores.length,
+          }))
+          .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString)),
+      }))
+      .sort((a, b) => a.semesterNumber - b.semesterNumber);
+  }
+
+  private aggregateDepartmentTrends(snapshots: any[]): DepartmentTrendAggregated[] {
+    const yearDeptMap = new Map<string, Map<string, {
+      departmentId: string;
+      departmentName: string;
+      scores: number[];
+    }>>();
+
+    snapshots.forEach(snapshot => {
+      const score = this.parseResponseValueToScore(snapshot.responseValue);
+      if (score === null || score <= 0) return;
+
+      if (!yearDeptMap.has(snapshot.academicYearString)) {
+        yearDeptMap.set(snapshot.academicYearString, new Map());
+      }
+
+      const deptMap = yearDeptMap.get(snapshot.academicYearString)!;
+      if (!deptMap.has(snapshot.departmentId)) {
+        deptMap.set(snapshot.departmentId, {
+          departmentId: snapshot.departmentId,
+          departmentName: snapshot.departmentName,
+          scores: [],
+        });
+      }
+
+      deptMap.get(snapshot.departmentId)!.scores.push(score);
+    });
+
+    return Array.from(yearDeptMap.entries())
+      .map(([academicYearString, deptMap]) => ({
+        academicYearString,
+        departmentData: Array.from(deptMap.values())
+          .map(dept => ({
+            departmentId: dept.departmentId,
+            departmentName: dept.departmentName,
+            averageRating: dept.scores.length > 0
+              ? Number((dept.scores.reduce((a, b) => a + b, 0) / dept.scores.length).toFixed(2))
+              : 0,
+            responseCount: dept.scores.length,
+          }))
+          .sort((a, b) => a.departmentName.localeCompare(b.departmentName)),
+      }))
+      .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
+  }
+
+  // ==================== DETAILED DRILL-DOWN ENDPOINTS ====================
+
+  public async getSubjectDetailedAnalytics(
+    subjectId: string,
+    academicYearId?: string,
+    semesterId?: string,
+    departmentId?: string
+  ): Promise<SubjectDetailedAnalytics> {
+    try {
+      // Build where conditions for FeedbackSnapshot table
+      const whereClause: Prisma.FeedbackSnapshotWhereInput = {
+        subjectId,
+        isDeleted: false,
+        subjectIsDeleted: false,
+        formIsDeleted: false,
+        questionIsDeleted: false,
+        semesterIsDeleted: false,
+        divisionIsDeleted: false,
+        departmentIsDeleted: false,
+        academicYearIsDeleted: false,
+      };
+
+      if (academicYearId) {
+        whereClause.academicYearId = academicYearId;
+      }
+      if (semesterId) {
+        whereClause.semesterId = semesterId;
+      }
+      if (departmentId) {
+        whereClause.departmentId = departmentId;
+      }
+
+      // Fetch subject data from FeedbackSnapshot (same source as getCompleteAnalyticsData)
+      const snapshots = await prisma.feedbackSnapshot.findMany({
+        where: whereClause,
+        select: {
+          subjectId: true,
+          subjectName: true,
+          subjectAbbreviation: true,
+          subjectCode: true,
+          facultyId: true,
+          facultyName: true,
+          facultyAbbreviation: true,
+          divisionId: true,
+          divisionName: true,
+          questionCategoryId: true,
+          questionCategoryName: true,
+          questionBatch: true,
+          responseValue: true,
+        },
+      });
+
+      console.log(`[getSubjectDetailedAnalytics] FeedbackSnapshot query returned ${snapshots.length} results for subjectId: ${subjectId}, academicYearId: ${academicYearId}, semesterId: ${semesterId}, departmentId: ${departmentId}`);
+
+      if (snapshots.length === 0) {
+        // Check if the subject exists at all
+        const subjectExists = await prisma.subject.findUnique({
+          where: { id: subjectId },
+          select: { id: true, name: true, isDeleted: true },
+        });
+
+        if (!subjectExists) {
+          throw new AppError(`Subject with ID ${subjectId} does not exist.`, 404);
+        }
+        if (subjectExists.isDeleted) {
+          throw new AppError(`Subject "${subjectExists.name}" has been deleted.`, 404);
+        }
+        throw new AppError(`Subject "${subjectExists.name}" has no feedback data matching the selected filters.`, 404);
+      }
+
+      const firstSnapshot = snapshots[0];
+
+      // Derive lectureType from questionCategoryName or questionBatch
+      const deriveLectureType = (snapshot: typeof snapshots[0]): 'LECTURE' | 'LAB' => {
+        if (
+          snapshot.questionCategoryName?.toLowerCase().includes('laboratory') ||
+          snapshot.questionCategoryName?.toLowerCase().includes('lab')
+        ) {
+          return 'LAB';
+        } else if (
+          snapshot.questionBatch &&
+          snapshot.questionBatch.toLowerCase() !== 'none'
+        ) {
+          return 'LAB';
+        }
+        return 'LECTURE';
+      };
+
+      // Calculate overall and lecture/lab ratings
+      const lectureScores: number[] = [];
+      const labScores: number[] = [];
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        const lectureType = deriveLectureType(s);
+        if (score !== null && score > 0) {
+          if (lectureType === 'LECTURE') {
+            lectureScores.push(score);
+          } else {
+            labScores.push(score);
+          }
+        }
+      });
+
+      const allScores = [...lectureScores, ...labScores];
+
+      // Faculty breakdown
+      const facultyMap = new Map<string, {
+        facultyId: string;
+        facultyName: string;
+        facultyAbbreviation: string;
+        lectureType: 'LECTURE' | 'LAB';
+        scores: number[];
+        divisions: Set<string>;
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const lectureType = deriveLectureType(s);
+        const key = `${s.facultyId}-${lectureType}`;
+        if (!facultyMap.has(key)) {
+          facultyMap.set(key, {
+            facultyId: s.facultyId,
+            facultyName: s.facultyName,
+            facultyAbbreviation: s.facultyAbbreviation,
+            lectureType: lectureType,
+            scores: [],
+            divisions: new Set(),
+          });
+        }
+        const faculty = facultyMap.get(key)!;
+        faculty.scores.push(score);
+        faculty.divisions.add(s.divisionName);
+      });
+
+      const facultyBreakdown = Array.from(facultyMap.values()).map(f => ({
+        facultyId: f.facultyId,
+        facultyName: f.facultyName,
+        facultyAbbreviation: f.facultyAbbreviation,
+        lectureType: f.lectureType,
+        rating: Number((f.scores.reduce((a, b) => a + b, 0) / f.scores.length).toFixed(2)),
+        responses: f.scores.length,
+        divisions: Array.from(f.divisions),
+      }));
+
+      // Division breakdown
+      const divisionMap = new Map<string, {
+        divisionId: string;
+        divisionName: string;
+        lectureScores: number[];
+        labScores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const lectureType = deriveLectureType(s);
+        if (!divisionMap.has(s.divisionId)) {
+          divisionMap.set(s.divisionId, {
+            divisionId: s.divisionId,
+            divisionName: s.divisionName,
+            lectureScores: [],
+            labScores: [],
+          });
+        }
+        const division = divisionMap.get(s.divisionId)!;
+        if (lectureType === 'LECTURE') {
+          division.lectureScores.push(score);
+        } else {
+          division.labScores.push(score);
+        }
+      });
+
+      const divisionBreakdown = Array.from(divisionMap.values()).map(d => {
+        const allDivScores = [...d.lectureScores, ...d.labScores];
+        return {
+          divisionId: d.divisionId,
+          divisionName: d.divisionName,
+          lectureRating: d.lectureScores.length > 0
+            ? Number((d.lectureScores.reduce((a, b) => a + b, 0) / d.lectureScores.length).toFixed(2))
+            : null,
+          labRating: d.labScores.length > 0
+            ? Number((d.labScores.reduce((a, b) => a + b, 0) / d.labScores.length).toFixed(2))
+            : null,
+          totalRating: allDivScores.length > 0
+            ? Number((allDivScores.reduce((a, b) => a + b, 0) / allDivScores.length).toFixed(2))
+            : 0,
+          responses: allDivScores.length,
+        };
+      });
+
+      // Question category breakdown
+      const categoryMap = new Map<string, {
+        categoryId: string;
+        categoryName: string;
+        scores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0 || !s.questionCategoryId) return;
+
+        if (!categoryMap.has(s.questionCategoryId)) {
+          categoryMap.set(s.questionCategoryId, {
+            categoryId: s.questionCategoryId,
+            categoryName: s.questionCategoryName,
+            scores: [],
+          });
+        }
+        categoryMap.get(s.questionCategoryId)!.scores.push(score);
+      });
+
+      const questionBreakdown = Array.from(categoryMap.values()).map(c => ({
+        categoryId: c.categoryId,
+        categoryName: c.categoryName,
+        avgRating: Number((c.scores.reduce((a, b) => a + b, 0) / c.scores.length).toFixed(2)),
+        questionCount: c.scores.length,
+      }));
+
+      return {
+        subject: {
+          id: firstSnapshot.subjectId,
+          name: firstSnapshot.subjectName,
+          abbreviation: firstSnapshot.subjectAbbreviation,
+          code: firstSnapshot.subjectCode,
+        },
+        overallRating: allScores.length > 0
+          ? Number((allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2))
+          : 0,
+        lectureRating: lectureScores.length > 0
+          ? Number((lectureScores.reduce((a, b) => a + b, 0) / lectureScores.length).toFixed(2))
+          : null,
+        labRating: labScores.length > 0
+          ? Number((labScores.reduce((a, b) => a + b, 0) / labScores.length).toFixed(2))
+          : null,
+        totalResponses: allScores.length,
+        lectureResponses: lectureScores.length,
+        labResponses: labScores.length,
+        facultyBreakdown,
+        divisionBreakdown,
+        questionBreakdown,
+      };
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      console.error('Error in AnalyticsService.getSubjectDetailedAnalytics:', error);
+      throw new AppError('Failed to retrieve subject detailed analytics.', 500);
+    }
+  }
+
+  public async getFacultyDetailedAnalytics(
+    facultyId: string,
+    academicYearId?: string
+  ): Promise<FacultyDetailedAnalytics> {
+    try {
+      // Build where conditions for FeedbackSnapshot table
+      const whereClause: Prisma.FeedbackSnapshotWhereInput = {
+        facultyId,
+        isDeleted: false,
+        formIsDeleted: false,
+        questionIsDeleted: false,
+        semesterIsDeleted: false,
+        divisionIsDeleted: false,
+        subjectIsDeleted: false,
+        academicYearIsDeleted: false,
+      };
+
+      if (academicYearId) {
+        whereClause.academicYearId = academicYearId;
+      }
+
+      // Fetch faculty data from FeedbackSnapshot (same source as getCompleteAnalyticsData)
+      const snapshots = await prisma.feedbackSnapshot.findMany({
+        where: whereClause,
+        select: {
+          facultyId: true,
+          facultyName: true,
+          facultyAbbreviation: true,
+          subjectId: true,
+          subjectName: true,
+          subjectAbbreviation: true,
+          divisionId: true,
+          divisionName: true,
+          semesterNumber: true,
+          academicYearId: true,
+          academicYearString: true,
+          questionCategoryId: true,
+          questionCategoryName: true,
+          questionBatch: true,
+          responseValue: true,
+        },
+      });
+
+      console.log(`[getFacultyDetailedAnalytics] FeedbackSnapshot query returned ${snapshots.length} results for facultyId: ${facultyId}, academicYearId: ${academicYearId}`);
+
+      if (snapshots.length === 0) {
+        // Check if the faculty exists at all
+        const facultyExists = await prisma.faculty.findUnique({
+          where: { id: facultyId },
+          select: { id: true, name: true, isDeleted: true },
+        });
+
+        if (!facultyExists) {
+          throw new AppError(`Faculty with ID ${facultyId} does not exist.`, 404);
+        }
+        if (facultyExists.isDeleted) {
+          throw new AppError(`Faculty "${facultyExists.name}" has been deleted.`, 404);
+        }
+        throw new AppError(`Faculty "${facultyExists.name}" has no feedback data matching the selected filters.`, 404);
+      }
+
+      // Get faculty designation from the faculty table
+      const faculty = await prisma.faculty.findUnique({
+        where: { id: facultyId },
+        select: { designation: true },
+      });
+
+      const firstSnapshot = snapshots[0];
+
+      // Derive lectureType from questionCategoryName or questionBatch
+      const deriveLectureType = (snapshot: typeof snapshots[0]): 'LECTURE' | 'LAB' => {
+        if (
+          snapshot.questionCategoryName?.toLowerCase().includes('laboratory') ||
+          snapshot.questionCategoryName?.toLowerCase().includes('lab')
+        ) {
+          return 'LAB';
+        } else if (
+          snapshot.questionBatch &&
+          snapshot.questionBatch.toLowerCase() !== 'none'
+        ) {
+          return 'LAB';
+        }
+        return 'LECTURE';
+      };
+
+      const allScores = snapshots
+        .map(s => this.parseResponseValueToScore(s.responseValue))
+        .filter((score): score is number => score !== null && score > 0);
+
+      // Get faculty rank using FeedbackSnapshot
+      const allFacultySnapshots = await prisma.feedbackSnapshot.findMany({
+        where: {
+          isDeleted: false,
+          formIsDeleted: false,
+          academicYearIsDeleted: false,
+          ...(academicYearId && { academicYearId }),
+        },
+        select: {
+          facultyId: true,
+          facultyName: true,
+          responseValue: true,
+        },
+      });
+
+      const facultyScoreMap = new Map<string, { name: string; scores: number[] }>();
+      allFacultySnapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+        if (!facultyScoreMap.has(s.facultyId)) {
+          facultyScoreMap.set(s.facultyId, { name: s.facultyName, scores: [] });
+        }
+        facultyScoreMap.get(s.facultyId)!.scores.push(score);
+      });
+
+      const rankedFaculty = Array.from(facultyScoreMap.entries())
+        .map(([id, data]) => ({
+          facultyId: id,
+          avgRating: data.scores.reduce((a, b) => a + b, 0) / data.scores.length,
+        }))
+        .sort((a, b) => b.avgRating - a.avgRating);
+
+      const rank = rankedFaculty.findIndex(f => f.facultyId === facultyId) + 1;
+      const totalFaculty = rankedFaculty.length;
+
+      // Subject breakdown
+      const subjectMap = new Map<string, {
+        subjectId: string;
+        subjectName: string;
+        subjectAbbreviation: string;
+        lectureType: 'LECTURE' | 'LAB';
+        scores: number[];
+        semester: number;
+        academicYear: string;
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const lectureType = deriveLectureType(s);
+        const key = `${s.subjectId}-${lectureType}`;
+        if (!subjectMap.has(key)) {
+          subjectMap.set(key, {
+            subjectId: s.subjectId,
+            subjectName: s.subjectName,
+            subjectAbbreviation: s.subjectAbbreviation,
+            lectureType,
+            scores: [],
+            semester: s.semesterNumber,
+            academicYear: s.academicYearString,
+          });
+        }
+        subjectMap.get(key)!.scores.push(score);
+      });
+
+      const subjectBreakdown = Array.from(subjectMap.values()).map(s => ({
+        subjectId: s.subjectId,
+        subjectName: s.subjectName,
+        subjectAbbreviation: s.subjectAbbreviation,
+        lectureType: s.lectureType,
+        rating: Number((s.scores.reduce((a, b) => a + b, 0) / s.scores.length).toFixed(2)),
+        responses: s.scores.length,
+        semester: s.semester,
+        academicYear: s.academicYear,
+      }));
+
+      // Division breakdown
+      const divisionMap = new Map<string, {
+        divisionId: string;
+        divisionName: string;
+        subjectName: string;
+        lectureType: 'LECTURE' | 'LAB';
+        scores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const lectureType = deriveLectureType(s);
+        const key = `${s.divisionId}-${s.subjectId}-${lectureType}`;
+        if (!divisionMap.has(key)) {
+          divisionMap.set(key, {
+            divisionId: s.divisionId,
+            divisionName: s.divisionName,
+            subjectName: s.subjectName,
+            lectureType,
+            scores: [],
+          });
+        }
+        divisionMap.get(key)!.scores.push(score);
+      });
+
+      const divisionBreakdown = Array.from(divisionMap.values()).map(d => ({
+        divisionId: d.divisionId,
+        divisionName: d.divisionName,
+        subjectName: d.subjectName,
+        lectureType: d.lectureType,
+        rating: Number((d.scores.reduce((a, b) => a + b, 0) / d.scores.length).toFixed(2)),
+        responses: d.scores.length,
+      }));
+
+      // Question category breakdown
+      const categoryMap = new Map<string, {
+        category: string;
+        scores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0 || !s.questionCategoryName) return;
+
+        if (!categoryMap.has(s.questionCategoryName)) {
+          categoryMap.set(s.questionCategoryName, {
+            category: s.questionCategoryName,
+            scores: [],
+          });
+        }
+        categoryMap.get(s.questionCategoryName)!.scores.push(score);
+      });
+
+      const questionCategoryBreakdown = Array.from(categoryMap.values()).map(c => ({
+        category: c.category,
+        avgRating: Number((c.scores.reduce((a, b) => a + b, 0) / c.scores.length).toFixed(2)),
+        questionCount: c.scores.length,
+      }));
+
+      // Trend data across academic years
+      const trendMap = new Map<string, {
+        academicYearId: string;
+        academicYear: string;
+        semester: number;
+        scores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const key = `${s.academicYearId}-${s.semesterNumber}`;
+        if (!trendMap.has(key)) {
+          trendMap.set(key, {
+            academicYearId: s.academicYearId,
+            academicYear: s.academicYearString,
+            semester: s.semesterNumber,
+            scores: [],
+          });
+        }
+        trendMap.get(key)!.scores.push(score);
+      });
+
+      const trendData = Array.from(trendMap.values())
+        .map(t => ({
+          academicYearId: t.academicYearId,
+          academicYear: t.academicYear,
+          semester: t.semester,
+          rating: Number((t.scores.reduce((a, b) => a + b, 0) / t.scores.length).toFixed(2)),
+          responses: t.scores.length,
+        }))
+        .sort((a, b) => a.academicYear.localeCompare(b.academicYear) || a.semester - b.semester);
+
+      return {
+        faculty: {
+          id: firstSnapshot.facultyId,
+          name: firstSnapshot.facultyName,
+          abbreviation: firstSnapshot.facultyAbbreviation,
+          designation: faculty?.designation || '',
+        },
+        overallRating: allScores.length > 0
+          ? Number((allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2))
+          : 0,
+        totalResponses: allScores.length,
+        rank,
+        totalFaculty,
+        subjectBreakdown,
+        divisionBreakdown,
+        questionCategoryBreakdown,
+        trendData,
+      };
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      console.error('Error in AnalyticsService.getFacultyDetailedAnalytics:', error);
+      throw new AppError('Failed to retrieve faculty detailed analytics.', 500);
+    }
+  }
+
+  // Helper to get all faculty snapshots for ranking
+  private async getAllFacultySnapshots(academicYearId?: string): Promise<any[]> {
+    const whereConditions: Prisma.Sql[] = [
+      Prisma.sql`sr.is_deleted = false`,
+      Prisma.sql`ff.is_deleted = false`,
+      Prisma.sql`sa.is_deleted = false`,
+      Prisma.sql`fac.is_deleted = false`,
+    ];
+
+    if (academicYearId) {
+      whereConditions.push(Prisma.sql`ay.id = ${academicYearId}`);
+    }
+
+    const whereClause = Prisma.sql`WHERE ${Prisma.join(whereConditions, ' AND ')}`;
+
+    return prisma.$queryRaw<any[]>`
+      SELECT
+        fac.id AS "facultyId",
+        fac.name AS "facultyName",
+        COALESCE(fac.abbreviation, '') AS "facultyAbbreviation",
+        fac.designation AS "facultyDesignation",
+        sr.response_value AS "responseValue"
+      FROM student_responses sr
+      INNER JOIN feedback_forms ff ON sr.feedback_form_id = ff.id
+      INNER JOIN subject_allocations sa ON ff.subject_allocation_id = sa.id
+      INNER JOIN faculties fac ON sa.faculty_id = fac.id
+      INNER JOIN semesters sem ON sa.semester_id = sem.id
+      INNER JOIN academic_years ay ON sem.academic_year_id = ay.id
+      ${whereClause}
+    `;
+  }
+
+  public async getDivisionDetailedAnalytics(
+    divisionId: string,
+    academicYearId?: string
+  ): Promise<DivisionDetailedAnalytics> {
+    try {
+      // Build where conditions for FeedbackSnapshot table
+      const whereClause: Prisma.FeedbackSnapshotWhereInput = {
+        divisionId,
+        isDeleted: false,
+        formIsDeleted: false,
+        questionIsDeleted: false,
+        semesterIsDeleted: false,
+        divisionIsDeleted: false,
+        subjectIsDeleted: false,
+        departmentIsDeleted: false,
+        academicYearIsDeleted: false,
+      };
+
+      if (academicYearId) {
+        whereClause.academicYearId = academicYearId;
+      }
+
+      // Fetch division data from FeedbackSnapshot (same source as getCompleteAnalyticsData)
+      const snapshots = await prisma.feedbackSnapshot.findMany({
+        where: whereClause,
+        select: {
+          divisionId: true,
+          divisionName: true,
+          departmentName: true,
+          semesterNumber: true,
+          facultyId: true,
+          facultyName: true,
+          facultyAbbreviation: true,
+          subjectId: true,
+          subjectName: true,
+          subjectAbbreviation: true,
+          academicYearId: true,
+          academicYearString: true,
+          questionCategoryName: true,
+          questionBatch: true,
+          responseValue: true,
+        },
+      });
+
+      console.log(`[getDivisionDetailedAnalytics] FeedbackSnapshot query returned ${snapshots.length} results for divisionId: ${divisionId}, academicYearId: ${academicYearId}`);
+
+      if (snapshots.length === 0) {
+        // Check if the division exists at all
+        const divisionExists = await prisma.division.findUnique({
+          where: { id: divisionId },
+          select: { id: true, divisionName: true, isDeleted: true },
+        });
+
+        if (!divisionExists) {
+          throw new AppError(`Division with ID ${divisionId} does not exist.`, 404);
+        }
+        if (divisionExists.isDeleted) {
+          throw new AppError(`Division "${divisionExists.divisionName}" has been deleted.`, 404);
+        }
+        throw new AppError(`Division "${divisionExists.divisionName}" has no feedback data matching the selected filters.`, 404);
+      }
+
+      const firstSnapshot = snapshots[0];
+
+      // Derive lectureType from questionCategoryName or questionBatch
+      const deriveLectureType = (snapshot: typeof snapshots[0]): 'LECTURE' | 'LAB' => {
+        if (
+          snapshot.questionCategoryName?.toLowerCase().includes('laboratory') ||
+          snapshot.questionCategoryName?.toLowerCase().includes('lab')
+        ) {
+          return 'LAB';
+        } else if (
+          snapshot.questionBatch &&
+          snapshot.questionBatch.toLowerCase() !== 'none'
+        ) {
+          return 'LAB';
+        }
+        return 'LECTURE';
+      };
+
+      const allScores = snapshots
+        .map(s => this.parseResponseValueToScore(s.responseValue))
+        .filter((score): score is number => score !== null && score > 0);
+
+      // Faculty breakdown
+      const facultyMap = new Map<string, {
+        facultyId: string;
+        facultyName: string;
+        facultyAbbreviation: string;
+        subjectName: string;
+        lectureType: 'LECTURE' | 'LAB';
+        scores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const lectureType = deriveLectureType(s);
+        const key = `${s.facultyId}-${s.subjectId}-${lectureType}`;
+        if (!facultyMap.has(key)) {
+          facultyMap.set(key, {
+            facultyId: s.facultyId,
+            facultyName: s.facultyName,
+            facultyAbbreviation: s.facultyAbbreviation,
+            subjectName: s.subjectName,
+            lectureType,
+            scores: [],
+          });
+        }
+        facultyMap.get(key)!.scores.push(score);
+      });
+
+      const facultyBreakdown = Array.from(facultyMap.values()).map(f => ({
+        facultyId: f.facultyId,
+        facultyName: f.facultyName,
+        facultyAbbreviation: f.facultyAbbreviation,
+        subjectName: f.subjectName,
+        lectureType: f.lectureType,
+        rating: Number((f.scores.reduce((a, b) => a + b, 0) / f.scores.length).toFixed(2)),
+        responses: f.scores.length,
+      }));
+
+      // Subject breakdown
+      const subjectMap = new Map<string, {
+        subjectId: string;
+        subjectName: string;
+        subjectAbbreviation: string;
+        lectureScores: number[];
+        labScores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        const lectureType = deriveLectureType(s);
+        if (!subjectMap.has(s.subjectId)) {
+          subjectMap.set(s.subjectId, {
+            subjectId: s.subjectId,
+            subjectName: s.subjectName,
+            subjectAbbreviation: s.subjectAbbreviation,
+            lectureScores: [],
+            labScores: [],
+          });
+        }
+        const subject = subjectMap.get(s.subjectId)!;
+        if (lectureType === 'LECTURE') {
+          subject.lectureScores.push(score);
+        } else {
+          subject.labScores.push(score);
+        }
+      });
+
+      const subjectBreakdown = Array.from(subjectMap.values()).map(s => {
+        const allSubjectScores = [...s.lectureScores, ...s.labScores];
+        return {
+          subjectId: s.subjectId,
+          subjectName: s.subjectName,
+          subjectAbbreviation: s.subjectAbbreviation,
+          lectureRating: s.lectureScores.length > 0
+            ? Number((s.lectureScores.reduce((a, b) => a + b, 0) / s.lectureScores.length).toFixed(2))
+            : null,
+          labRating: s.labScores.length > 0
+            ? Number((s.labScores.reduce((a, b) => a + b, 0) / s.labScores.length).toFixed(2))
+            : null,
+          totalRating: allSubjectScores.length > 0
+            ? Number((allSubjectScores.reduce((a, b) => a + b, 0) / allSubjectScores.length).toFixed(2))
+            : 0,
+          responses: allSubjectScores.length,
+        };
+      });
+
+      // Academic year comparison
+      const yearMap = new Map<string, {
+        academicYearId: string;
+        academicYearString: string;
+        scores: number[];
+      }>();
+
+      snapshots.forEach(s => {
+        const score = this.parseResponseValueToScore(s.responseValue);
+        if (score === null || score <= 0) return;
+
+        if (!yearMap.has(s.academicYearId)) {
+          yearMap.set(s.academicYearId, {
+            academicYearId: s.academicYearId,
+            academicYearString: s.academicYearString,
+            scores: [],
+          });
+        }
+        yearMap.get(s.academicYearId)!.scores.push(score);
+      });
+
+      const academicYearComparison = Array.from(yearMap.values())
+        .map(y => ({
+          academicYearId: y.academicYearId,
+          academicYearString: y.academicYearString,
+          rating: Number((y.scores.reduce((a, b) => a + b, 0) / y.scores.length).toFixed(2)),
+          responses: y.scores.length,
+        }))
+        .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
+
+      return {
+        division: {
+          id: firstSnapshot.divisionId,
+          name: firstSnapshot.divisionName,
+          departmentName: firstSnapshot.departmentName,
+          semesterNumber: firstSnapshot.semesterNumber,
+        },
+        overallRating: allScores.length > 0
+          ? Number((allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2))
+          : 0,
+        totalResponses: allScores.length,
+        facultyBreakdown,
+        subjectBreakdown,
+        academicYearComparison,
+      };
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      console.error('Error in AnalyticsService.getDivisionDetailedAnalytics:', error);
+      throw new AppError('Failed to retrieve division detailed analytics.', 500);
     }
   }
 }
