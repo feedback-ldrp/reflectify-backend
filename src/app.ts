@@ -18,12 +18,17 @@ const app: Application = express();
 app.use(helmet());
 
 // Configure Cross-Origin Resource Sharing (CORS).
+const allowedOrigins =
+  process.env.NODE_ENV === 'production'
+    ? [
+        process.env.FRONTEND_PROD_URL,
+        'https://reflectify-rho.vercel.app',
+      ].filter(Boolean) as string[]
+    : [process.env.FRONTEND_DEV_URL].filter(Boolean) as string[];
+
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === 'production'
-        ? process.env.FRONTEND_PROD_URL
-        : process.env.FRONTEND_DEV_URL,
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
   })
