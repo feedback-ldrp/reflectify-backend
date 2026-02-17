@@ -247,19 +247,31 @@ class FacultyDataUploadService {
         } = validatedData;
 
         let facultyDesignation: Designation;
-        const lowerCaseDesignation = designationString.toLowerCase();
-        switch (lowerCaseDesignation) {
+        const normalizedDesignation = designationString.toLowerCase().replace(/[.\s-]/g, '');
+        switch (normalizedDesignation) {
           case 'hod':
-          case 'head of department':
+          case 'headofdepartment':
             facultyDesignation = Designation.HOD;
             break;
           case 'asstprof':
-          case 'assistant professor':
+          case 'asstprofessor':
+          case 'assistantprofessor':
+          case 'associateprofessor':
+          case 'assocprof':
+          case 'professor':
+          case 'prof':
+          case 'lecturer':
+          case 'seniorlecturer':
             facultyDesignation = Designation.AsstProf;
             break;
           case 'labasst':
-          case 'lab assistant':
+          case 'labassistant':
             facultyDesignation = Designation.LabAsst;
+            break;
+          case 'superadmin':
+          case 'super_admin':
+          case 'admin':
+            facultyDesignation = Designation.SUPER_ADMIN;
             break;
           default:
             const message = `Row ${rowNumber}: Unknown designation '${designationString}' for faculty '${name}'. Defaulting to AsstProf.`;
