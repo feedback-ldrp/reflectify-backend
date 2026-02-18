@@ -98,7 +98,6 @@ class FacultyService {
         },
         include: {
           department: true,
-          mentoredDivisions: true,
           allocations: true,
         },
       });
@@ -130,7 +129,6 @@ class FacultyService {
         },
         include: {
           department: true,
-          mentoredDivisions: { where: { isDeleted: false } },
           allocations: { where: { isDeleted: false } },
         },
       });
@@ -175,7 +173,6 @@ class FacultyService {
         },
         include: {
           department: true,
-          mentoredDivisions: true,
           allocations: true,
         },
       });
@@ -271,7 +268,6 @@ class FacultyService {
           },
           include: {
             department: true,
-            mentoredDivisions: true,
             allocations: true,
           },
         });
