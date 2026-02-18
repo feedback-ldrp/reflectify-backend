@@ -117,6 +117,7 @@ class SemesterService {
         update: {
           startDate: startDate ? new Date(startDate) : undefined,
           endDate: endDate ? new Date(endDate) : undefined,
+          isDeleted: false,
         },
         include: {
           department: true,

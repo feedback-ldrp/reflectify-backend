@@ -207,7 +207,6 @@ class SubjectDataUploadService {
           academicYearId: academicYearId,
           semesterType: semesterType,
         },
-        isDeleted: false,
       },
       create: {
         departmentId: departmentId,
@@ -218,6 +217,7 @@ class SubjectDataUploadService {
       },
       update: {
         semesterType: semesterType,
+        isDeleted: false,
       },
     });
     semesterCache.set(semesterKey, semester);

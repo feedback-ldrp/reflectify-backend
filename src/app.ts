@@ -18,17 +18,27 @@ const app: Application = express();
 app.use(helmet());
 
 // Configure Cross-Origin Resource Sharing (CORS).
+// Allow all *.vercel.app domains in production, and the dev URL in development
+const vercelRegex = /^https?:\/\/[a-zA-Z0-9-]+\.vercel\.app$/;
 const allowedOrigins =
   process.env.NODE_ENV === 'production'
-    ? [
-        process.env.FRONTEND_PROD_URL,
-        'https://reflectify-rho.vercel.app',
-      ].filter(Boolean) as string[]
-    : [process.env.FRONTEND_DEV_URL].filter(Boolean) as string[];
+    ? [process.env.FRONTEND_PROD_URL, vercelRegex].filter(Boolean)
+    : [process.env.FRONTEND_DEV_URL].filter(Boolean);
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // allow non-browser requests
+      if (
+        allowedOrigins.some((allowed) =>
+          allowed &&
+          (typeof allowed === 'string' ? origin === allowed : allowed.test(origin))
+        )
+      ) {
+        return callback(null, true);
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
   })
