@@ -60,8 +60,18 @@ interface ProcessedData {
   [collegeName: string]: CollegeData;
 }
 
+interface TimetableEntry {
+  Subject: string;
+  Type: string;
+  Batch: string;
+  Day: string;
+  Time_Slot: number | string;
+  Faculty: string;
+}
+
 interface FlaskResponse {
   results: ProcessedData;
+  division_timetables?: Record<string, TimetableEntry[]>;
   status: {
     success: boolean;
     message: string;
@@ -655,6 +665,75 @@ class FacultyMatrixUploadService {
         console.error(message, dbError);
         skippedRowsDetails.push(message);
       }
+    }
+
+    // Store division timetables with day/slot data
+    if (flaskResponse.division_timetables) {
+      let timetablesStored = 0;
+      for (const [divKey, entries] of Object.entries(flaskResponse.division_timetables)) {
+        try {
+          // divKey format: "4A" => semester 4, division "A"
+          // Use regex to split numeric prefix from alpha suffix (handles multi-digit semesters like "10A")
+          const keyMatch = divKey.match(/^(\d+)(.+)$/);
+          if (!keyMatch) continue;
+          const semNum = parseInt(keyMatch[1]);
+          const divName = keyMatch[2];
+          if (isNaN(semNum)) continue;
+
+          // Check semester type matches
+          const expectedType = semNum % 2 !== 0 ? SemesterTypeEnum.ODD : SemesterTypeEnum.EVEN;
+          if (expectedType !== semesterType) continue;
+
+          // First, look up the semester to get its ID
+          const semCacheKey = `${department.id}_${semNum}_${academicYear.id}_${semesterType}`;
+          let semRecord = this.semesterCache.get(semCacheKey);
+          if (!semRecord) {
+            // Try to find via DB
+            const dbSem = await prisma.semester.findFirst({
+              where: { departmentId: department.id, semesterNumber: semNum, academicYearId: academicYear.id, semesterType, isDeleted: false },
+            });
+            if (dbSem) semRecord = dbSem;
+          }
+
+          if (!semRecord) {
+            console.warn(`Warning: Semester ${semNum} not found for timetable key '${divKey}'`);
+            continue;
+          }
+
+          // Look up the division from cache using the exact key (dept_divName_semId)
+          const divCacheKey = `${department.id}_${divName}_${semRecord.id}`;
+          let divisionRecord: Division | undefined = this.divisionCache.get(divCacheKey);
+
+          if (!divisionRecord) {
+            // Try to find via DB
+            const div = await prisma.division.findFirst({
+              where: { departmentId: department.id, divisionName: divName, semesterId: semRecord.id, isDeleted: false },
+            });
+            if (div) divisionRecord = div;
+          }
+
+          if (divisionRecord) {
+            await prisma.divisionTimetable.upsert({
+              where: { divisionId: divisionRecord.id },
+              create: {
+                divisionId: divisionRecord.id,
+                timetableData: entries as any,
+                isDeleted: false,
+              },
+              update: {
+                timetableData: entries as any,
+                isDeleted: false,
+              },
+            });
+            timetablesStored++;
+          } else {
+            console.warn(`Warning: Division '${divName}' not found for semester ${semNum} (key: '${divKey}')`);
+          }
+        } catch (ttError: any) {
+          console.warn(`Warning: Could not store timetable for division key '${divKey}': ${ttError.message}`);
+        }
+      }
+      console.log(`📅 Division timetables stored: ${timetablesStored}/${Object.keys(flaskResponse.division_timetables).length}`);
     }
 
     const processingEndTime = Date.now();

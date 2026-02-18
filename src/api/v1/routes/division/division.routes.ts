@@ -15,13 +15,19 @@ import {
   batchCreateDivisions,
 } from '../../../../controllers/division/division.controller';
 import {
+  getDivisionTimetable,
+} from '../../../../controllers/division/divisionTimetable.controller';
+import {
   isAuthenticated,
   authorizeRoles,
 } from '../../../../middlewares/auth.middleware';
 
 const router = Router();
 
-// Apply authentication middleware to all division routes
+// Public route - timetable data (no auth required)
+router.get('/:divisionId/timetable', getDivisionTimetable);
+
+// Apply authentication middleware to all other division routes
 router.use(isAuthenticated);
 
 // Routes for individual division operations

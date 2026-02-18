@@ -157,6 +157,7 @@ model Division {
     students           Student[]
     subjectAllocations SubjectAllocation[]
     feedbackForms      FeedbackForm[]
+    timetable          DivisionTimetable?
     createdAt          DateTime            @default(now()) @map("created_at")
     updatedAt          DateTime            @updatedAt @map("updated_at")
 
@@ -600,6 +601,22 @@ model FeedbackSnapshot {
     @@index([subjectId, facultyId])
     @@index([formId, questionId])
     @@map("feedback_snapshots")
+}
+
+// Defines the DivisionTimetable model for storing timetable grid data with day/slot info.
+model DivisionTimetable {
+    id            String  @id @default(uuid())
+    divisionId    String  @unique @map("division_id")
+    timetableData Json    @map("timetable_data")
+    isDeleted     Boolean @default(false) @map("is_deleted")
+
+    division Division @relation(fields: [divisionId], references: [id], onDelete: Restrict)
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@index([divisionId])
+    @@map("division_timetables")
 }
 
 // Defines the PromotionHistory model.

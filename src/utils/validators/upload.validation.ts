@@ -43,16 +43,25 @@ export const facultyExcelRowSchema = z.object({
     .min(1, 'Designation is required.')
     .trim()
     .refine(
-      (val) =>
-        Object.values(Designation).some(
-          (enumVal) => enumVal.toLowerCase() === val.toLowerCase()
-        ) ||
-        ['head of department', 'assistant professor', 'lab assistant'].includes(
-          val.toLowerCase()
-        ),
+      (val) => {
+        const lower = val.toLowerCase().replace(/[.\s-]/g, '');
+        const validDesignations = [
+          // Enum values
+          ...Object.values(Designation).map((v) => v.toLowerCase()),
+          // Full forms & common aliases
+          'headofdepartment', 'hod',
+          'assistantprofessor', 'asstprof', 'asstprofessor', 'asstprof',
+          'associateprofessor', 'assocprof',
+          'professor', 'prof',
+          'labassistant', 'labasst',
+          'lecturer', 'seniorlecturer',
+          'superadmin', 'super_admin', 'admin',
+        ];
+        return validDesignations.includes(lower);
+      },
       `Invalid designation. Must be one of: ${Object.values(Designation).join(
         ', '
-      )}, or their full forms (e.g., 'Head of Department').`
+      )}, or their full forms (e.g., 'Head of Department', 'Assistant Professor', 'Associate Professor', 'Professor', 'Lecturer').`
     ),
   deptInput: z.string().min(1, 'Department is required.').trim(),
   joiningDate: z.union([z.date(), z.string(), z.null()]).optional().nullable(), // Can be Date object, string, or null
