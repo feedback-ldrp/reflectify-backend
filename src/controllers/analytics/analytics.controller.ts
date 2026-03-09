@@ -385,8 +385,11 @@ export const getOptimizedAnalyticsData = asyncHandler(
 // ==================== DETAILED DRILL-DOWN ENDPOINTS ====================
 
 export const getSubjectDetailedAnalytics = asyncHandler(
-  // Retrieves detailed analytics for a specific subject.
+  // Retrieves detailed analytics for a specific subject. Only SUPER_ADMIN can access.
   async (req: Request, res: Response) => {
+    if (!req.admin || req.admin.designation !== 'SUPER_ADMIN') {
+      throw new AppError('You do not have permission to access this data.', 403);
+    }
     try {
       const { subjectId } = req.params;
       const { academicYearId, semesterId, departmentId } = req.query;
@@ -414,8 +417,11 @@ export const getSubjectDetailedAnalytics = asyncHandler(
 );
 
 export const getFacultyDetailedAnalytics = asyncHandler(
-  // Retrieves detailed analytics for a specific faculty member.
+  // Retrieves detailed analytics for a specific faculty member. Only SUPER_ADMIN can access.
   async (req: Request, res: Response) => {
+    if (!req.admin || req.admin.designation !== 'SUPER_ADMIN') {
+      throw new AppError('You do not have permission to access this data.', 403);
+    }
     try {
       const { facultyId } = req.params;
       const { academicYearId } = req.query;
@@ -441,8 +447,11 @@ export const getFacultyDetailedAnalytics = asyncHandler(
 );
 
 export const getDivisionDetailedAnalytics = asyncHandler(
-  // Retrieves detailed analytics for a specific division.
+  // Retrieves detailed analytics for a specific division. Only SUPER_ADMIN can access.
   async (req: Request, res: Response) => {
+    if (!req.admin || req.admin.designation !== 'SUPER_ADMIN') {
+      throw new AppError('You do not have permission to access this data.', 403);
+    }
     try {
       const { divisionId } = req.params;
       const { academicYearId } = req.query;

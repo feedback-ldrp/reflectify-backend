@@ -8,7 +8,7 @@ import { emailQueue } from './queue';
 
 // Create a dedicated Redis connection for the worker.
 // Workers require a blocking connection, so it cannot be shared with the Queue.
-const connection = new IORedis(config.redisUrl, {
+const connection = new IORedis(config.redisUrl as string, {
   maxRetriesPerRequest: null,
 });
 

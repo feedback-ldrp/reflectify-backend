@@ -9,6 +9,16 @@ import path from 'path';
 // Loads environment variables from the .env file.
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+// Defines the application configuration interface.
+export interface AppConfig {
+  port: number;
+  nodeEnv: 'development' | 'production' | 'test';
+  databaseUrl?: string;
+  jwtSecret: string;
+  jwtExpiresIn: string | number;
+  redisUrl?: string;
+}
+
 // Defines the application configuration object.
 const config: AppConfig = {
   port: parseInt(process.env.PORT || '8000', 10),

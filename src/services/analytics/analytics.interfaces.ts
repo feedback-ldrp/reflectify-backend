@@ -83,6 +83,39 @@ export interface DepartmentTrendAggregated {
   }>;
 }
 
+export interface SubjectFacultyPerformanceAggregated {
+  subjectName: string;
+  subjectAbbreviation: string;
+  overallSubjectAverage: number | null;
+  overallSubjectResponses: number;
+  facultyData: Array<{
+    facultyId: string;
+    facultyName: string;
+    averageRating: number;
+    responseCount: number;
+  }>;
+}
+
+export interface BatchComparisonAggregated {
+  departmentId: string;
+  departmentName: string;
+  divisionId: string;
+  divisionName: string;
+  batch: string;
+  averageRating: number;
+  totalResponses: number;
+  engagementScore: number;
+}
+
+export interface AcademicYearDivisionTrendAggregated {
+  academicYearString: string;
+  divisionData: Array<{
+    divisionName: string;
+    averageRating: number;
+    responseCount: number;
+  }>;
+}
+
 // ==================== OPTIMIZED RESPONSE TYPE ====================
 // This replaces the old response that included raw feedbackSnapshots
 
@@ -94,11 +127,14 @@ export interface OptimizedAnalyticsResponse {
   subjectRatings: SubjectRatingAggregated[];
   facultyPerformance: FacultyPerformanceAggregated[];
   divisionPerformance: DivisionPerformanceAggregated[];
+  subjectFacultyPerformance: SubjectFacultyPerformanceAggregated[];
+  batchComparisons: BatchComparisonAggregated[];
 
   // Trend data
   academicYearTrends: AcademicYearTrendAggregated[];
   semesterTrends: SemesterTrendAggregated[];
   departmentTrends: DepartmentTrendAggregated[];
+  academicYearDivisionTrends: AcademicYearDivisionTrendAggregated[];
 
   // Metadata
   filters: {

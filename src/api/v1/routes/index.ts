@@ -7,6 +7,7 @@
 import { Router } from 'express';
 
 import academicYearRoutes from './academicYear/academicYear.routes';
+import adminUserRoutes from './adminUser.routes';
 import authRoutes from './auth/auth.routes';
 import collegeRoutes from './college/college.routes';
 import departmentRoutes from './department/department.routes';
@@ -30,6 +31,7 @@ import contactRoutes from './contact/contact.routes';
 const router = Router();
 
 // Mount feature-specific routers
+router.use('/admin-users', adminUserRoutes);
 router.use('/auth', authRoutes);
 router.use('/academic-years', academicYearRoutes);
 router.use('/colleges', collegeRoutes);

@@ -53,6 +53,13 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+// Redirect legacy frontend path requests to the frontend app (helps when clients call /admin-users by mistake).
+app.get('/admin-users', (_req: Request, res: Response) => {
+  const frontend = process.env.NODE_ENV === 'production' ? process.env.FRONTEND_PROD_URL : process.env.FRONTEND_DEV_URL;
+  if (frontend) return res.redirect(frontend + '/admin-users');
+  return res.status(302).send('Redirect to frontend admin-users');
+});
+
 // Mount API routes for version 1.
 app.use('/api/v1', apiV1Router);
 app.use('/api/v1/service', serviceRouter);
@@ -62,8 +69,16 @@ app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ message: "Backend API's running at /api/v1" });
 });
 
-// Handle undefined routes (404 Not Found).
+// Handle undefined routes (404 Not Found).  
+// Log extra headers for easier debugging of stray requests (e.g. unexpected /admin-users).
 app.all('*', (req: Request, _res: Response, next: NextFunction) => {
+  console.warn('Unhandled request:', {
+    method: req.method,
+    url: req.originalUrl,
+    referer: req.headers.referer || null,
+    userAgent: req.headers['user-agent'] || null,
+    ip: req.ip,
+  });
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 

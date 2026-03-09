@@ -10,9 +10,13 @@ class DivisionTimetableService {
    * Get timetable data for a specific division.
    */
   public async getTimetableByDivisionId(divisionId: string) {
+    // findUnique only accepts unique fields, so filter isDeleted after query
     const timetable = await prisma.divisionTimetable.findUnique({
-      where: { divisionId, isDeleted: false },
+      where: { divisionId },
     });
+    if (timetable && timetable.isDeleted) {
+      return null;
+    }
     return timetable;
   }
 

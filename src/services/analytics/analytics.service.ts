@@ -20,6 +20,9 @@ import {
   SemesterTrendAggregated,
   DepartmentTrendAggregated,
   OverallStats,
+  SubjectFacultyPerformanceAggregated,
+  BatchComparisonAggregated,
+  AcademicYearDivisionTrendAggregated,
 } from './analytics.interfaces';
 
 interface OverallSemesterRatingOutput {
@@ -535,7 +538,7 @@ class AnalyticsService {
         const avgRating =
           numericResponses.length > 0
             ? numericResponses.reduce((acc, score) => acc + score, 0) /
-              numericResponses.length
+            numericResponses.length
             : 0;
 
         return {
@@ -604,7 +607,7 @@ class AnalyticsService {
           const averageRating =
             numericResponses.length > 0
               ? numericResponses.reduce((acc, r) => acc + r, 0) /
-                numericResponses.length
+              numericResponses.length
               : 0;
 
           significantLowRatedQuestions.push({
@@ -686,7 +689,7 @@ class AnalyticsService {
         const avgRating =
           numericResponses.length > 0
             ? numericResponses.reduce((acc, score) => acc + score, 0) /
-              numericResponses.length
+            numericResponses.length
             : 0;
 
         return {
@@ -845,7 +848,7 @@ class AnalyticsService {
           const avgRating =
             numericBatchResponses.length > 0
               ? numericBatchResponses.reduce((sum, r) => sum + r, 0) /
-                numericBatchResponses.length
+              numericBatchResponses.length
               : 0;
 
           comparisonData.push({
@@ -934,7 +937,7 @@ class AnalyticsService {
         const avgRating =
           numericResponses.length > 0
             ? numericResponses.reduce((sum, r) => sum + r, 0) /
-              numericResponses.length
+            numericResponses.length
             : 0;
 
         return {
@@ -1181,8 +1184,8 @@ class AnalyticsService {
         facultyOutput.total_average =
           facultyData.totalCount > 0
             ? parseFloat(
-                (facultyData.totalSum / facultyData.totalCount).toFixed(2)
-              )
+              (facultyData.totalSum / facultyData.totalCount).toFixed(2)
+            )
             : null;
 
         finalResultFaculties.push(facultyOutput);
@@ -1981,7 +1984,7 @@ class AnalyticsService {
           const avgRating =
             numericResponses.length > 0
               ? numericResponses.reduce((acc, score) => acc + score, 0) /
-                numericResponses.length
+              numericResponses.length
               : 0;
 
           const firstSnapshot = snapshots[0];
@@ -2020,7 +2023,7 @@ class AnalyticsService {
           const avgRating =
             numericResponses.length > 0
               ? numericResponses.reduce((acc, score) => acc + score, 0) /
-                numericResponses.length
+              numericResponses.length
               : 0;
 
           const firstSnapshot = snapshots[0];
@@ -2095,127 +2098,381 @@ class AnalyticsService {
     includeDeleted: boolean = false
   ): Promise<OptimizedAnalyticsResponse> {
     try {
-      // Build the filter conditions
-      const whereConditions: Prisma.Sql[] = [];
+      const conditions: Prisma.Sql[] = [];
 
       if (!includeDeleted) {
-        whereConditions.push(Prisma.sql`sr.is_deleted = false`);
-        whereConditions.push(Prisma.sql`ff.is_deleted = false`);
-        whereConditions.push(Prisma.sql`sa.is_deleted = false`);
-        whereConditions.push(Prisma.sql`sem.is_deleted = false`);
-        whereConditions.push(Prisma.sql`div.is_deleted = false`);
-        whereConditions.push(Prisma.sql`sub.is_deleted = false`);
-        whereConditions.push(Prisma.sql`fac.is_deleted = false`);
-        whereConditions.push(Prisma.sql`dept.is_deleted = false`);
-        whereConditions.push(Prisma.sql`ay.is_deleted = false`);
-        whereConditions.push(Prisma.sql`st.is_deleted = false`);
+        conditions.push(Prisma.sql`is_deleted = false`);
+        conditions.push(Prisma.sql`academic_year_is_deleted = false`);
+        conditions.push(Prisma.sql`department_is_deleted = false`);
+        conditions.push(Prisma.sql`semester_is_deleted = false`);
+        conditions.push(Prisma.sql`division_is_deleted = false`);
+        conditions.push(Prisma.sql`subject_is_deleted = false`);
+        conditions.push(Prisma.sql`form_is_deleted = false`);
+        conditions.push(Prisma.sql`question_is_deleted = false`);
+        conditions.push(Prisma.sql`form_deleted = false`);
+      } else {
+        conditions.push(Prisma.sql`1=1`);
       }
 
-      if (academicYearId) {
-        whereConditions.push(Prisma.sql`ay.id = ${academicYearId}`);
-      }
-      if (departmentId) {
-        whereConditions.push(Prisma.sql`dept.id = ${departmentId}`);
-      }
-      if (subjectId) {
-        whereConditions.push(Prisma.sql`sub.id = ${subjectId}`);
-      }
-      if (semesterId) {
-        whereConditions.push(Prisma.sql`sem.id = ${semesterId}`);
-      }
-      if (divisionId) {
-        whereConditions.push(Prisma.sql`div.id = ${divisionId}`);
-      }
-      if (lectureType) {
-        whereConditions.push(Prisma.sql`sa."lectureType" = ${lectureType}::"LectureType"`);
+      if (academicYearId) conditions.push(Prisma.sql`academic_year_id = ${academicYearId}`);
+      if (departmentId) conditions.push(Prisma.sql`department_id = ${departmentId}`);
+      if (subjectId) conditions.push(Prisma.sql`subject_id = ${subjectId}`);
+      if (semesterId) conditions.push(Prisma.sql`semester_id = ${semesterId}`);
+      if (divisionId) conditions.push(Prisma.sql`division_id = ${divisionId}`);
+
+      const labCondition = Prisma.sql`question_category_name ILIKE '%laboratory%' OR question_category_name ILIKE '%lab%' OR (question_batch IS NOT NULL AND question_batch NOT ILIKE 'none')`;
+
+      if (lectureType === 'LAB') {
+        conditions.push(Prisma.sql`(${labCondition})`);
+      } else if (lectureType === 'LECTURE') {
+        conditions.push(Prisma.sql`NOT (${labCondition})`);
       }
 
-      const whereClause = whereConditions.length > 0
-        ? Prisma.sql`WHERE ${Prisma.join(whereConditions, ' AND ')}`
-        : Prisma.empty;
+      const whereSql = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
+      const scoreExpr = Prisma.sql`CAST(COALESCE(NULLIF(response_value->>'score', ''), NULLIF(response_value#>>'{}', '')) AS NUMERIC)`;
 
-      // Fetch aggregated data using a single optimized query
-      const feedbackSnapshots = await prisma.$queryRaw<Array<{
-        id: string;
-        academicYearId: string;
-        academicYearString: string;
-        departmentId: string;
-        departmentName: string;
-        departmentAbbreviation: string;
-        semesterId: string;
-        semesterNumber: number;
-        divisionId: string;
-        divisionName: string;
-        subjectId: string;
-        subjectName: string;
-        subjectAbbreviation: string;
-        subjectCode: string;
-        facultyId: string;
-        facultyName: string;
-        facultyAbbreviation: string;
-        facultyDesignation: string;
-        studentId: string | null;
-        studentEnrollmentNumber: string;
-        formId: string;
-        responseValue: any;
-        batch: string;
-        lectureType: LectureType;
-      }>>`
-        SELECT
-          sr.id,
-          ay.id AS "academicYearId",
-          ay.year_string AS "academicYearString",
-          dept.id AS "departmentId",
-          dept.name AS "departmentName",
-          dept.abbreviation AS "departmentAbbreviation",
-          sem.id AS "semesterId",
-          sem.semester_number AS "semesterNumber",
-          div.id AS "divisionId",
-          div.division_name AS "divisionName",
-          sub.id AS "subjectId",
-          sub.name AS "subjectName",
-          COALESCE(sub.abbreviation, '') AS "subjectAbbreviation",
-          COALESCE(sub.subject_code, '') AS "subjectCode",
-          fac.id AS "facultyId",
-          fac.name AS "facultyName",
-          COALESCE(fac.abbreviation, '') AS "facultyAbbreviation",
-          fac.designation AS "facultyDesignation",
-          st.id AS "studentId",
-          st.enrollment_number AS "studentEnrollmentNumber",
-          ff.id AS "formId",
-          sr.response_value AS "responseValue",
-          st.batch,
-          sa."lectureType" AS "lectureType"
-        FROM student_responses sr
-        INNER JOIN feedback_forms ff ON sr.feedback_form_id = ff.id
-        INNER JOIN subject_allocations sa ON ff.subject_allocation_id = sa.id
-        INNER JOIN semesters sem ON sa.semester_id = sem.id
-        INNER JOIN divisions div ON ff.division_id = div.id
-        INNER JOIN departments dept ON sem.department_id = dept.id
-        INNER JOIN academic_years ay ON sem.academic_year_id = ay.id
-        INNER JOIN subjects sub ON sa.subject_id = sub.id
-        INNER JOIN faculties fac ON sa.faculty_id = fac.id
-        INNER JOIN students st ON sr.student_id = st.id
-        ${whereClause}
+      // 1. Overall Stats
+      const overallQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              COUNT(DISTINCT subject_id) as "uniqueSubjects",
+              COUNT(DISTINCT faculty_id) as "uniqueFaculties",
+              COUNT(DISTINCT student_id) as "uniqueStudents",
+              COUNT(DISTINCT division_id) as "uniqueDivisions",
+              COUNT(*) as "totalResponses",
+              AVG(${scoreExpr}) as "averageRating"
+          FROM feedback_snapshots
+          ${whereSql}
+          AND ${scoreExpr} > 0
       `;
 
-      // Process the data into aggregated formats
-      const overallStats = this.calculateOverallStats(feedbackSnapshots);
-      const subjectRatings = this.aggregateSubjectRatings(feedbackSnapshots);
-      const facultyPerformance = this.aggregateFacultyPerformance(feedbackSnapshots);
-      const divisionPerformance = this.aggregateDivisionPerformance(feedbackSnapshots);
-      const academicYearTrends = this.aggregateAcademicYearTrends(feedbackSnapshots);
-      const semesterTrends = this.aggregateSemesterTrends(feedbackSnapshots);
-      const departmentTrends = this.aggregateDepartmentTrends(feedbackSnapshots);
+      // 2. Subject Ratings
+      const subjectQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              subject_id as "subjectId",
+              MAX(subject_name) as "subjectName",
+              MAX(subject_abbreviation) as "subjectAbbreviation",
+              MAX(subject_code) as "subjectCode",
+              AVG(${scoreExpr}) as "overallRating",
+              COUNT(*) as "totalResponses",
+              COUNT(DISTINCT faculty_id) as "facultyCount",
+              COUNT(DISTINCT division_id) as "divisionCount",
+              AVG(CASE WHEN ${labCondition} THEN ${scoreExpr} ELSE NULL END) as "labRating",
+              SUM(CASE WHEN ${labCondition} THEN 1 ELSE 0 END) as "labResponses",
+              AVG(CASE WHEN NOT (${labCondition}) THEN ${scoreExpr} ELSE NULL END) as "lectureRating",
+              SUM(CASE WHEN NOT (${labCondition}) THEN 1 ELSE 0 END) as "lectureResponses"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY subject_id
+          ORDER BY "overallRating" DESC
+      `;
+
+      // 3. Faculty Performance
+      const facultyQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              faculty_id as "facultyId",
+              MAX(faculty_name) as "facultyName",
+              MAX(faculty_abbreviation) as "facultyAbbreviation",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "totalResponses",
+              COUNT(DISTINCT subject_id) as "subjectCount",
+              COUNT(DISTINCT division_id) as "divisionCount"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY faculty_id
+          ORDER BY "averageRating" DESC
+      `;
+
+      // 4. Division Performance
+      const divisionQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              division_id as "divisionId",
+              MAX(division_name) as "divisionName",
+              MAX(semester_number) as "semesterNumber",
+              MAX(department_name) as "departmentName",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "totalResponses",
+              COUNT(DISTINCT faculty_id) as "facultyCount",
+              COUNT(DISTINCT subject_id) as "subjectCount"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY division_id
+          ORDER BY "averageRating" DESC
+      `;
+
+      // 5. Subject Faculty Performance
+      const subjectFacultyQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              subject_id as "subjectId",
+              MAX(subject_name) as "subjectName",
+              MAX(subject_abbreviation) as "subjectAbbreviation",
+              faculty_id as "facultyId",
+              MAX(faculty_name) as "facultyName",
+              AVG(${scoreExpr}) as "rating",
+              COUNT(*) as "responses"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY subject_id, faculty_id
+          ORDER BY "rating" DESC
+      `;
+
+      // 6. Batch Comparisons
+      const batchQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              MAX(department_id) as "departmentId",
+              MAX(department_name) as "departmentName",
+              division_id as "divisionId",
+              MAX(division_name) as "divisionName",
+              question_batch as "batch",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "totalResponses"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0 AND question_batch IS NOT NULL AND question_batch NOT ILIKE 'none' AND question_batch != ''
+          GROUP BY division_id, question_batch
+          ORDER BY "divisionName" ASC, "batch" ASC
+      `;
+
+      // 7. Academic Year Trends
+      const academicYearQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              academic_year_id as "academicYearId",
+              MAX(academic_year_string) as "academicYearString",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "totalResponses",
+              COUNT(DISTINCT department_id) as "departmentCount",
+              COUNT(DISTINCT division_id) as "divisionCount"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY academic_year_id
+          ORDER BY "academicYearString" ASC
+      `;
+
+      // 8. Semester Trends
+      const semesterQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              semester_number as "semesterNumber",
+              academic_year_id as "academicYearId",
+              MAX(academic_year_string) as "academicYearString",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "responseCount"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY semester_number, academic_year_id
+          ORDER BY "semesterNumber" ASC, "academicYearString" ASC
+      `;
+
+      // 9. Department Trends
+      const deptQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              department_id as "departmentId",
+              MAX(department_name) as "departmentName",
+              academic_year_id as "academicYearId",
+              MAX(academic_year_string) as "academicYearString",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "responseCount"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY department_id, academic_year_id
+          ORDER BY "departmentName" ASC, "academicYearString" ASC
+      `;
+
+      // 10. Academic Year Division Trends
+      const ayDivisionQuery = prisma.$queryRaw<any[]>`
+          SELECT
+              academic_year_id as "academicYearId",
+              MAX(academic_year_string) as "academicYearString",
+              division_id as "divisionId",
+              MAX(division_name) as "divisionName",
+              AVG(${scoreExpr}) as "averageRating",
+              COUNT(*) as "responseCount"
+          FROM feedback_snapshots
+          ${whereSql} AND ${scoreExpr} > 0
+          GROUP BY academic_year_id, division_id
+          ORDER BY "academicYearString" ASC, "divisionName" ASC
+      `;
+
+      const [
+        overallRes, subjectRes, facultyRes, divisionRes, subjectFacultyRes,
+        batchRes, academicYearRes, semesterRes, deptRes, ayDivisionRes
+      ] = await Promise.all([
+        overallQuery, subjectQuery, facultyQuery, divisionQuery, subjectFacultyQuery,
+        batchQuery, academicYearQuery, semesterQuery, deptQuery, ayDivisionQuery
+      ]);
+
+      // --- Formatting Results ---
+
+      const overallStats = overallRes[0] ? {
+        totalResponses: Number(overallRes[0].totalResponses || 0),
+        averageRating: Number(Number(overallRes[0].averageRating || 0).toFixed(2)),
+        uniqueSubjects: Number(overallRes[0].uniqueSubjects || 0),
+        uniqueFaculties: Number(overallRes[0].uniqueFaculties || 0),
+        uniqueStudents: Number(overallRes[0].uniqueStudents || 0),
+        uniqueDivisions: Number(overallRes[0].uniqueDivisions || 0),
+      } : {
+        totalResponses: 0, averageRating: 0, uniqueSubjects: 0,
+        uniqueFaculties: 0, uniqueStudents: 0, uniqueDivisions: 0
+      };
+
+      const subjectRatings = subjectRes.map((r: any) => ({
+        subjectId: r.subjectId,
+        subjectName: r.subjectName,
+        subjectAbbreviation: r.subjectAbbreviation,
+        subjectCode: r.subjectCode,
+        lectureRating: r.lectureRating ? Number(Number(r.lectureRating).toFixed(2)) : null,
+        labRating: r.labRating ? Number(Number(r.labRating).toFixed(2)) : null,
+        overallRating: Number(Number(r.overallRating).toFixed(2)),
+        lectureResponses: Number(r.lectureResponses || 0),
+        labResponses: Number(r.labResponses || 0),
+        totalResponses: Number(r.totalResponses || 0),
+        facultyCount: Number(r.facultyCount || 0),
+        divisionCount: Number(r.divisionCount || 0)
+      }));
+
+      const facultyPerformance = facultyRes.map((r: any, index: number) => ({
+        facultyId: r.facultyId,
+        facultyName: r.facultyName,
+        facultyAbbreviation: r.facultyAbbreviation,
+        designation: r.designation || 'N/A', // Assuming designation comes if available
+        averageRating: Number(Number(r.averageRating).toFixed(2)),
+        totalResponses: Number(r.totalResponses || 0),
+        rank: index + 1,
+        subjectCount: Number(r.subjectCount || 0),
+        divisionCount: Number(r.divisionCount || 0)
+      }));
+
+      const divisionPerformance = divisionRes.map((r: any) => ({
+        divisionId: r.divisionId,
+        divisionName: r.divisionName,
+        departmentName: r.departmentName,
+        semesterNumber: Number(r.semesterNumber || 0),
+        averageRating: Number(Number(r.averageRating).toFixed(2)),
+        totalResponses: Number(r.totalResponses || 0),
+        facultyCount: Number(r.facultyCount || 0),
+        subjectCount: Number(r.subjectCount || 0)
+      })).sort((a, b) => a.divisionName.localeCompare(b.divisionName));
+
+      // Subject Faculty nested mapping
+      const subjectFacultyMap = new Map<string, any>();
+      subjectFacultyRes.forEach((r: any) => {
+        if (!subjectFacultyMap.has(r.subjectId)) {
+          // Find overall rating + responses from subjectRes
+          const subjData = subjectRatings.find((s: any) => s.subjectId === r.subjectId);
+          subjectFacultyMap.set(r.subjectId, {
+            subjectName: r.subjectName,
+            subjectAbbreviation: r.subjectAbbreviation,
+            overallSubjectAverage: subjData?.overallRating || null,
+            overallSubjectResponses: subjData?.totalResponses || 0,
+            facultyData: []
+          });
+        }
+        subjectFacultyMap.get(r.subjectId).facultyData.push({
+          facultyId: r.facultyId,
+          facultyName: r.facultyName,
+          averageRating: Number(Number(r.rating).toFixed(2)),
+          responseCount: Number(r.responses || 0)
+        });
+      });
+      const subjectFacultyPerformance = Array.from(subjectFacultyMap.values())
+        .sort((a, b) => a.subjectName.localeCompare(b.subjectName));
+
+      // Batch Comparison
+      const batchComparisons = batchRes.map((r: any) => ({
+        departmentId: r.departmentId,
+        departmentName: r.departmentName,
+        divisionId: r.divisionId,
+        divisionName: r.divisionName,
+        batch: r.batch,
+        averageRating: Number(Number(r.averageRating).toFixed(2)),
+        totalResponses: Number(r.totalResponses || 0),
+        engagementScore: Math.min(10, Math.round(Number(r.totalResponses || 0) / 5))
+      }));
+
+      // Academic Year Trends
+      const academicYearTrends = academicYearRes.map((r: any) => ({
+        academicYearId: r.academicYearId,
+        academicYearString: r.academicYearString,
+        averageRating: Number(Number(r.averageRating).toFixed(2)),
+        totalResponses: Number(r.totalResponses || 0),
+        departmentCount: Number(r.departmentCount || 0),
+        divisionCount: Number(r.divisionCount || 0)
+      }));
+
+      // Semester Trends (Nested)
+      const semesterMap = new Map<number, any>();
+      semesterRes.forEach((r: any) => {
+        const sem = Number(r.semesterNumber || 0);
+        if (!semesterMap.has(sem)) {
+          semesterMap.set(sem, { semesterNumber: sem, academicYearData: [] });
+        }
+        semesterMap.get(sem).academicYearData.push({
+          academicYearId: r.academicYearId,
+          academicYearString: r.academicYearString,
+          averageRating: Number(Number(r.averageRating).toFixed(2)),
+          responseCount: Number(r.responseCount || 0)
+        });
+      });
+      const semesterTrends = Array.from(semesterMap.values())
+        .map(s => {
+          s.academicYearData.sort((a: any, b: any) => a.academicYearString.localeCompare(b.academicYearString));
+          return s;
+        })
+        .sort((a, b) => a.semesterNumber - b.semesterNumber);
+
+      // Department Trends (Nested)
+      const deptMap = new Map<string, any>();
+      deptRes.forEach((r: any) => {
+        if (!deptMap.has(r.academicYearString)) {
+          deptMap.set(r.academicYearString, {
+            academicYearString: r.academicYearString,
+            departmentData: []
+          });
+        }
+        deptMap.get(r.academicYearString).departmentData.push({
+          departmentId: r.departmentId,
+          departmentName: r.departmentName,
+          averageRating: Number(Number(r.averageRating).toFixed(2)),
+          responseCount: Number(r.responseCount || 0)
+        });
+      });
+      const departmentTrends = Array.from(deptMap.values())
+        .map(d => {
+          d.departmentData.sort((a: any, b: any) => a.departmentName.localeCompare(b.departmentName));
+          return d;
+        })
+        .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
+
+      // Academic Year Division Trends (Nested)
+      const ayDivMap = new Map<string, any>();
+      ayDivisionRes.forEach((r: any) => {
+        if (!ayDivMap.has(r.academicYearString)) {
+          ayDivMap.set(r.academicYearString, {
+            academicYearString: r.academicYearString,
+            divisionData: []
+          });
+        }
+        ayDivMap.get(r.academicYearString).divisionData.push({
+          divisionName: r.divisionName,
+          averageRating: Number(Number(r.averageRating).toFixed(2)),
+          responseCount: Number(r.responseCount || 0)
+        });
+      });
+      const academicYearDivisionTrends = Array.from(ayDivMap.values())
+        .map(d => {
+          d.divisionData.sort((a: any, b: any) => a.divisionName.localeCompare(b.divisionName));
+          return d;
+        })
+        .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
 
       return {
         overallStats,
         subjectRatings,
         facultyPerformance,
         divisionPerformance,
+        subjectFacultyPerformance,
+        batchComparisons,
         academicYearTrends,
         semesterTrends,
         departmentTrends,
+        academicYearDivisionTrends,
         filters: {
           academicYearId,
           departmentId,
@@ -2230,333 +2487,6 @@ class AnalyticsService {
       console.error('Error in AnalyticsService.getOptimizedAnalyticsData:', error);
       throw new AppError('Failed to retrieve optimized analytics data.', 500);
     }
-  }
-
-  // ==================== AGGREGATION HELPER METHODS ====================
-
-  private calculateOverallStats(snapshots: any[]): OverallStats {
-    const scores = snapshots
-      .map(s => this.parseResponseValueToScore(s.responseValue))
-      .filter((score): score is number => score !== null && score > 0);
-
-    const uniqueSubjects = new Set(snapshots.map(s => s.subjectId));
-    const uniqueFaculties = new Set(snapshots.map(s => s.facultyId));
-    const uniqueStudents = new Set(snapshots.map(s => s.studentId).filter(Boolean));
-    const uniqueDivisions = new Set(snapshots.map(s => s.divisionId));
-
-    return {
-      totalResponses: scores.length,
-      averageRating: scores.length > 0
-        ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
-        : 0,
-      uniqueSubjects: uniqueSubjects.size,
-      uniqueFaculties: uniqueFaculties.size,
-      uniqueStudents: uniqueStudents.size,
-      uniqueDivisions: uniqueDivisions.size,
-    };
-  }
-
-  private aggregateSubjectRatings(snapshots: any[]): SubjectRatingAggregated[] {
-    const subjectMap = new Map<string, {
-      subjectId: string;
-      subjectName: string;
-      subjectAbbreviation: string;
-      subjectCode: string;
-      lectureScores: number[];
-      labScores: number[];
-      faculties: Set<string>;
-      divisions: Set<string>;
-    }>();
-
-    snapshots.forEach(snapshot => {
-      const score = this.parseResponseValueToScore(snapshot.responseValue);
-      if (score === null || score <= 0) return;
-
-      if (!subjectMap.has(snapshot.subjectId)) {
-        subjectMap.set(snapshot.subjectId, {
-          subjectId: snapshot.subjectId,
-          subjectName: snapshot.subjectName,
-          subjectAbbreviation: snapshot.subjectAbbreviation,
-          subjectCode: snapshot.subjectCode,
-          lectureScores: [],
-          labScores: [],
-          faculties: new Set(),
-          divisions: new Set(),
-        });
-      }
-
-      const subject = subjectMap.get(snapshot.subjectId)!;
-      if (snapshot.lectureType === 'LECTURE') {
-        subject.lectureScores.push(score);
-      } else {
-        subject.labScores.push(score);
-      }
-      subject.faculties.add(snapshot.facultyId);
-      subject.divisions.add(snapshot.divisionId);
-    });
-
-    return Array.from(subjectMap.values())
-      .map(subject => {
-        const allScores = [...subject.lectureScores, ...subject.labScores];
-        return {
-          subjectId: subject.subjectId,
-          subjectName: subject.subjectName,
-          subjectAbbreviation: subject.subjectAbbreviation,
-          subjectCode: subject.subjectCode,
-          lectureRating: subject.lectureScores.length > 0
-            ? Number((subject.lectureScores.reduce((a, b) => a + b, 0) / subject.lectureScores.length).toFixed(2))
-            : null,
-          labRating: subject.labScores.length > 0
-            ? Number((subject.labScores.reduce((a, b) => a + b, 0) / subject.labScores.length).toFixed(2))
-            : null,
-          overallRating: allScores.length > 0
-            ? Number((allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2))
-            : 0,
-          lectureResponses: subject.lectureScores.length,
-          labResponses: subject.labScores.length,
-          totalResponses: allScores.length,
-          facultyCount: subject.faculties.size,
-          divisionCount: subject.divisions.size,
-        };
-      })
-      .sort((a, b) => b.overallRating - a.overallRating);
-  }
-
-  private aggregateFacultyPerformance(snapshots: any[]): FacultyPerformanceAggregated[] {
-    const facultyMap = new Map<string, {
-      facultyId: string;
-      facultyName: string;
-      facultyAbbreviation: string;
-      designation: string;
-      scores: number[];
-      subjects: Set<string>;
-      divisions: Set<string>;
-    }>();
-
-    snapshots.forEach(snapshot => {
-      const score = this.parseResponseValueToScore(snapshot.responseValue);
-      if (score === null || score <= 0) return;
-
-      if (!facultyMap.has(snapshot.facultyId)) {
-        facultyMap.set(snapshot.facultyId, {
-          facultyId: snapshot.facultyId,
-          facultyName: snapshot.facultyName,
-          facultyAbbreviation: snapshot.facultyAbbreviation,
-          designation: snapshot.facultyDesignation || 'N/A',
-          scores: [],
-          subjects: new Set(),
-          divisions: new Set(),
-        });
-      }
-
-      const faculty = facultyMap.get(snapshot.facultyId)!;
-      faculty.scores.push(score);
-      faculty.subjects.add(snapshot.subjectId);
-      faculty.divisions.add(snapshot.divisionId);
-    });
-
-    const facultyList = Array.from(facultyMap.values())
-      .map(faculty => ({
-        facultyId: faculty.facultyId,
-        facultyName: faculty.facultyName,
-        facultyAbbreviation: faculty.facultyAbbreviation,
-        designation: faculty.designation,
-        averageRating: faculty.scores.length > 0
-          ? Number((faculty.scores.reduce((a, b) => a + b, 0) / faculty.scores.length).toFixed(2))
-          : 0,
-        totalResponses: faculty.scores.length,
-        subjectCount: faculty.subjects.size,
-        divisionCount: faculty.divisions.size,
-        rank: 0, // Will be set after sorting
-      }))
-      .sort((a, b) => b.averageRating - a.averageRating);
-
-    // Assign ranks
-    facultyList.forEach((faculty, index) => {
-      faculty.rank = index + 1;
-    });
-
-    return facultyList;
-  }
-
-  private aggregateDivisionPerformance(snapshots: any[]): DivisionPerformanceAggregated[] {
-    const divisionMap = new Map<string, {
-      divisionId: string;
-      divisionName: string;
-      departmentName: string;
-      semesterNumber: number;
-      scores: number[];
-      faculties: Set<string>;
-      subjects: Set<string>;
-    }>();
-
-    snapshots.forEach(snapshot => {
-      const score = this.parseResponseValueToScore(snapshot.responseValue);
-      if (score === null || score <= 0) return;
-
-      if (!divisionMap.has(snapshot.divisionId)) {
-        divisionMap.set(snapshot.divisionId, {
-          divisionId: snapshot.divisionId,
-          divisionName: snapshot.divisionName,
-          departmentName: snapshot.departmentName,
-          semesterNumber: snapshot.semesterNumber,
-          scores: [],
-          faculties: new Set(),
-          subjects: new Set(),
-        });
-      }
-
-      const division = divisionMap.get(snapshot.divisionId)!;
-      division.scores.push(score);
-      division.faculties.add(snapshot.facultyId);
-      division.subjects.add(snapshot.subjectId);
-    });
-
-    return Array.from(divisionMap.values())
-      .map(division => ({
-        divisionId: division.divisionId,
-        divisionName: division.divisionName,
-        departmentName: division.departmentName,
-        semesterNumber: division.semesterNumber,
-        averageRating: division.scores.length > 0
-          ? Number((division.scores.reduce((a, b) => a + b, 0) / division.scores.length).toFixed(2))
-          : 0,
-        totalResponses: division.scores.length,
-        facultyCount: division.faculties.size,
-        subjectCount: division.subjects.size,
-      }))
-      .sort((a, b) => a.divisionName.localeCompare(b.divisionName));
-  }
-
-  private aggregateAcademicYearTrends(snapshots: any[]): AcademicYearTrendAggregated[] {
-    const yearMap = new Map<string, {
-      academicYearId: string;
-      academicYearString: string;
-      scores: number[];
-      departments: Set<string>;
-      divisions: Set<string>;
-    }>();
-
-    snapshots.forEach(snapshot => {
-      const score = this.parseResponseValueToScore(snapshot.responseValue);
-      if (score === null || score <= 0) return;
-
-      if (!yearMap.has(snapshot.academicYearId)) {
-        yearMap.set(snapshot.academicYearId, {
-          academicYearId: snapshot.academicYearId,
-          academicYearString: snapshot.academicYearString,
-          scores: [],
-          departments: new Set(),
-          divisions: new Set(),
-        });
-      }
-
-      const year = yearMap.get(snapshot.academicYearId)!;
-      year.scores.push(score);
-      year.departments.add(snapshot.departmentId);
-      year.divisions.add(snapshot.divisionId);
-    });
-
-    return Array.from(yearMap.values())
-      .map(year => ({
-        academicYearId: year.academicYearId,
-        academicYearString: year.academicYearString,
-        averageRating: year.scores.length > 0
-          ? Number((year.scores.reduce((a, b) => a + b, 0) / year.scores.length).toFixed(2))
-          : 0,
-        totalResponses: year.scores.length,
-        departmentCount: year.departments.size,
-        divisionCount: year.divisions.size,
-      }))
-      .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
-  }
-
-  private aggregateSemesterTrends(snapshots: any[]): SemesterTrendAggregated[] {
-    const semesterMap = new Map<number, Map<string, {
-      academicYearId: string;
-      academicYearString: string;
-      scores: number[];
-    }>>();
-
-    snapshots.forEach(snapshot => {
-      const score = this.parseResponseValueToScore(snapshot.responseValue);
-      if (score === null || score <= 0) return;
-
-      if (!semesterMap.has(snapshot.semesterNumber)) {
-        semesterMap.set(snapshot.semesterNumber, new Map());
-      }
-
-      const yearMap = semesterMap.get(snapshot.semesterNumber)!;
-      if (!yearMap.has(snapshot.academicYearId)) {
-        yearMap.set(snapshot.academicYearId, {
-          academicYearId: snapshot.academicYearId,
-          academicYearString: snapshot.academicYearString,
-          scores: [],
-        });
-      }
-
-      yearMap.get(snapshot.academicYearId)!.scores.push(score);
-    });
-
-    return Array.from(semesterMap.entries())
-      .map(([semesterNumber, yearMap]) => ({
-        semesterNumber,
-        academicYearData: Array.from(yearMap.values())
-          .map(year => ({
-            academicYearId: year.academicYearId,
-            academicYearString: year.academicYearString,
-            averageRating: year.scores.length > 0
-              ? Number((year.scores.reduce((a, b) => a + b, 0) / year.scores.length).toFixed(2))
-              : 0,
-            responseCount: year.scores.length,
-          }))
-          .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString)),
-      }))
-      .sort((a, b) => a.semesterNumber - b.semesterNumber);
-  }
-
-  private aggregateDepartmentTrends(snapshots: any[]): DepartmentTrendAggregated[] {
-    const yearDeptMap = new Map<string, Map<string, {
-      departmentId: string;
-      departmentName: string;
-      scores: number[];
-    }>>();
-
-    snapshots.forEach(snapshot => {
-      const score = this.parseResponseValueToScore(snapshot.responseValue);
-      if (score === null || score <= 0) return;
-
-      if (!yearDeptMap.has(snapshot.academicYearString)) {
-        yearDeptMap.set(snapshot.academicYearString, new Map());
-      }
-
-      const deptMap = yearDeptMap.get(snapshot.academicYearString)!;
-      if (!deptMap.has(snapshot.departmentId)) {
-        deptMap.set(snapshot.departmentId, {
-          departmentId: snapshot.departmentId,
-          departmentName: snapshot.departmentName,
-          scores: [],
-        });
-      }
-
-      deptMap.get(snapshot.departmentId)!.scores.push(score);
-    });
-
-    return Array.from(yearDeptMap.entries())
-      .map(([academicYearString, deptMap]) => ({
-        academicYearString,
-        departmentData: Array.from(deptMap.values())
-          .map(dept => ({
-            departmentId: dept.departmentId,
-            departmentName: dept.departmentName,
-            averageRating: dept.scores.length > 0
-              ? Number((dept.scores.reduce((a, b) => a + b, 0) / dept.scores.length).toFixed(2))
-              : 0,
-            responseCount: dept.scores.length,
-          }))
-          .sort((a, b) => a.departmentName.localeCompare(b.departmentName)),
-      }))
-      .sort((a, b) => a.academicYearString.localeCompare(b.academicYearString));
   }
 
   // ==================== DETAILED DRILL-DOWN ENDPOINTS ====================

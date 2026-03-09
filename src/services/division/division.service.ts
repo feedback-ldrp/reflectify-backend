@@ -107,7 +107,6 @@ class DivisionService {
         include: {
           department: true,
           semester: true,
-          mentors: { where: { isDeleted: false } },
           students: { where: { isDeleted: false } },
           subjectAllocations: { where: { isDeleted: false } },
           feedbackForms: { where: { isDeleted: false } },
@@ -150,7 +149,6 @@ class DivisionService {
         include: {
           department: true,
           semester: true,
-          mentors: { where: { isDeleted: false } },
           students: { where: { isDeleted: false } },
           subjectAllocations: { where: { isDeleted: false } },
           feedbackForms: { where: { isDeleted: false } },
@@ -205,7 +203,6 @@ class DivisionService {
         include: {
           department: true,
           semester: true,
-          mentors: { where: { isDeleted: false } },
           students: { where: { isDeleted: false } },
           subjectAllocations: { where: { isDeleted: false } },
           feedbackForms: { where: { isDeleted: false } },
@@ -298,7 +295,6 @@ class DivisionService {
           include: {
             department: true,
             semester: true,
-            mentors: { where: { isDeleted: false } },
             students: { where: { isDeleted: false } },
             subjectAllocations: { where: { isDeleted: false } },
             feedbackForms: { where: { isDeleted: false } },
