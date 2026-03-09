@@ -539,61 +539,65 @@ class FacultyMatrixUploadService {
               if (subjectData.lectures) {
                 // Handle standard lectures (designated_faculty)
                 if (subjectData.lectures.designated_faculty) {
-                  const facultyAbbr = subjectData.lectures.designated_faculty;
-                  let faculty: Faculty;
-                  try {
-                    faculty = await this.findFaculty(department.id, facultyAbbr);
+                  const facultyAbbrs = subjectData.lectures.designated_faculty.split(',').map(f => f.trim()).filter(f => f);
+                  for (const facultyAbbr of facultyAbbrs) {
+                    let faculty: Faculty;
+                    try {
+                      faculty = await this.findFaculty(department.id, facultyAbbr);
 
-                    const lectureAllocation: AllocationBatchItem = {
-                      departmentId: department.id,
-                      facultyId: faculty.id,
-                      subjectId: subject.id,
-                      divisionId: division.id,
-                      semesterId: semester.id,
-                      lectureType: 'LECTURE',
-                      batch: '-',
-                      academicYearId: academicYear.id,
-                      isDeleted: false,
-                    };
-                    allocationBatch.push(lectureAllocation);
-                  } catch (error: any) {
-                    missingFaculties.add(facultyAbbr);
-                    const message = `Skipping lecture allocation for Subject '${subjectAbbreviation}', Division '${divisionName}': Faculty '${facultyAbbr}' not found`;
-                    console.warn(message);
-                    skippedRowsDetails.push(message);
-                    totalRowsSkippedDueToMissingEntities++;
+                      const lectureAllocation: AllocationBatchItem = {
+                        departmentId: department.id,
+                        facultyId: faculty.id,
+                        subjectId: subject.id,
+                        divisionId: division.id,
+                        semesterId: semester.id,
+                        lectureType: 'LECTURE',
+                        batch: '-',
+                        academicYearId: academicYear.id,
+                        isDeleted: false,
+                      };
+                      allocationBatch.push(lectureAllocation);
+                    } catch (error: any) {
+                      missingFaculties.add(facultyAbbr);
+                      const message = `Skipping lecture allocation for Subject '${subjectAbbreviation}', Division '${divisionName}': Faculty '${facultyAbbr}' not found`;
+                      console.warn(message);
+                      skippedRowsDetails.push(message);
+                      totalRowsSkippedDueToMissingEntities++;
+                    }
                   }
-                } 
-                
+                }
+
                 // Handle batched lectures (keys other than designated_faculty)
                 for (const [batch, lectureData] of Object.entries(subjectData.lectures)) {
                   if (batch === 'designated_faculty') continue;
 
                   const data = lectureData as FacultyAssignment; // Type assertion
-                  const facultyAbbr = data.designated_faculty;
-                  
-                  let faculty: Faculty;
-                  try {
-                    faculty = await this.findFaculty(department.id, facultyAbbr);
+                  const facultyAbbrs = data.designated_faculty.split(',').map(f => f.trim()).filter(f => f);
 
-                    const lectureAllocation: AllocationBatchItem = {
-                      departmentId: department.id,
-                      facultyId: faculty.id,
-                      subjectId: subject.id,
-                      divisionId: division.id,
-                      semesterId: semester.id,
-                      lectureType: 'LECTURE',
-                      batch: batch,
-                      academicYearId: academicYear.id,
-                      isDeleted: false,
-                    };
-                    allocationBatch.push(lectureAllocation);
-                  } catch (error: any) {
-                    missingFaculties.add(facultyAbbr);
-                    const message = `Skipping batched lecture allocation for Subject '${subjectAbbreviation}', Division '${divisionName}', Batch '${batch}': Faculty '${facultyAbbr}' not found`;
-                    console.warn(message);
-                    skippedRowsDetails.push(message);
-                    totalRowsSkippedDueToMissingEntities++;
+                  for (const facultyAbbr of facultyAbbrs) {
+                    let faculty: Faculty;
+                    try {
+                      faculty = await this.findFaculty(department.id, facultyAbbr);
+
+                      const lectureAllocation: AllocationBatchItem = {
+                        departmentId: department.id,
+                        facultyId: faculty.id,
+                        subjectId: subject.id,
+                        divisionId: division.id,
+                        semesterId: semester.id,
+                        lectureType: 'LECTURE',
+                        batch: batch,
+                        academicYearId: academicYear.id,
+                        isDeleted: false,
+                      };
+                      allocationBatch.push(lectureAllocation);
+                    } catch (error: any) {
+                      missingFaculties.add(facultyAbbr);
+                      const message = `Skipping batched lecture allocation for Subject '${subjectAbbreviation}', Division '${divisionName}', Batch '${batch}': Faculty '${facultyAbbr}' not found`;
+                      console.warn(message);
+                      skippedRowsDetails.push(message);
+                      totalRowsSkippedDueToMissingEntities++;
+                    }
                   }
                 }
               }
@@ -602,32 +606,34 @@ class FacultyMatrixUploadService {
                 for (const [batch, labData] of Object.entries(
                   subjectData.labs
                 )) {
-                  const facultyAbbr = labData.designated_faculty;
-                  let faculty: Faculty;
-                  try {
-                    faculty = await this.findFaculty(
-                      department.id,
-                      facultyAbbr
-                    );
+                  const facultyAbbrs = labData.designated_faculty.split(',').map(f => f.trim()).filter(f => f);
+                  for (const facultyAbbr of facultyAbbrs) {
+                    let faculty: Faculty;
+                    try {
+                      faculty = await this.findFaculty(
+                        department.id,
+                        facultyAbbr
+                      );
 
-                    const labAllocation: AllocationBatchItem = {
-                      departmentId: department.id,
-                      facultyId: faculty.id,
-                      subjectId: subject.id,
-                      divisionId: division.id,
-                      semesterId: semester.id,
-                      lectureType: 'LAB',
-                      batch: batch,
-                      academicYearId: academicYear.id,
-                      isDeleted: false,
-                    };
-                    allocationBatch.push(labAllocation);
-                  } catch (error: any) {
-                    missingFaculties.add(facultyAbbr);
-                    const message = `Skipping lab allocation for Subject '${subjectAbbreviation}', Division '${divisionName}', Batch '${batch}': Faculty '${facultyAbbr}' not found`;
-                    console.warn(message);
-                    skippedRowsDetails.push(message);
-                    totalRowsSkippedDueToMissingEntities++;
+                      const labAllocation: AllocationBatchItem = {
+                        departmentId: department.id,
+                        facultyId: faculty.id,
+                        subjectId: subject.id,
+                        divisionId: division.id,
+                        semesterId: semester.id,
+                        lectureType: 'LAB',
+                        batch: batch,
+                        academicYearId: academicYear.id,
+                        isDeleted: false,
+                      };
+                      allocationBatch.push(labAllocation);
+                    } catch (error: any) {
+                      missingFaculties.add(facultyAbbr);
+                      const message = `Skipping lab allocation for Subject '${subjectAbbreviation}', Division '${divisionName}', Batch '${batch}': Faculty '${facultyAbbr}' not found`;
+                      console.warn(message);
+                      skippedRowsDetails.push(message);
+                      totalRowsSkippedDueToMissingEntities++;
+                    }
                   }
                 }
               }
